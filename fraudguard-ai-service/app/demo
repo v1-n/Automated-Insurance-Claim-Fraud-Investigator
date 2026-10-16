@@ -1,0 +1,97 @@
+claim-intelligence-service/
+├── Dockerfile                      # Production container build with Tesseract & Python 3.12
+├── README.md                       # Microservice documentation, endpoints, and setup
+├── requirements.txt                # Production Python dependencies
+├── requirements-dev.txt            # Testing & linting tools (pytest, black, ruff)
+├── .env.example                    # Template for secrets, API keys, and thresholds
+├── .dockerignore                   # Ignores venv, pycache, local test files in Docker
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py                     # FastAPI application entrypoint, middleware, lifecycle
+│   │
+│   ├── core/                       # Core infrastructure & cross-cutting concerns
+│   │   ├── __init__.py
+│   │   ├── config.py               # Pydantic BaseSettings (env vars, model paths, thresholds)
+│   │   ├── security.py             # X-Internal-Key authentication & tenant validation
+│   │   └── logging.py              # Structured JSON logging for production observability
+│   │
+│   ├── api/                        # HTTP / REST API Layer
+│   │   ├── __init__.py
+│   │   ├── dependencies.py         # FastAPI dependency injection (auth, services)
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── router.py           # Merges all v1 route controllers
+│   │       ├── endpoints/
+│   │       │   ├── health.py       # Liveness & readiness probes (/health, /metrics)
+│   │       │   ├── analyze.py      # Master full-claim analysis endpoint (/api/v1/analyze-claim)
+│   │       │   ├── documents.py    # Standalone document verification (/api/v1/verify-document)
+│   │       │   └── photos.py       # Standalone photo forensic inspection (/api/v1/inspect-photo)
+│   │
+│   ├── models/                     # Data Contracts & Pydantic Schemas
+│   │   ├── __init__.py
+│   │   ├── request_schemas.py      # ClaimAnalysisRequest, DocumentVerifyRequest
+│   │   ├── response_schemas.py     # ClaimAnalysisResponse, RiskScoreResponse
+│   │   └── evidence_flag.py        # EvidenceFlag, EvidenceItem, BoundingBox models (PRD EVD-1)
+│   │
+│   ├── services/                   # Business Logic & Core AI Engines
+│   │   ├── __init__.py
+│   │   │
+│   │   ├── document_intelligence/  # FEATURE 1: Document OCR & Field Verification
+│   │   │   ├── __init__.py
+│   │   │   ├── ocr_engine.py       # PyMuPDF (digital PDF) + Tesseract/PaddleOCR (scans)
+│   │   │   ├── preprocessor.py     # OpenCV deskewing, noise reduction, thresholding
+│   │   │   ├── fir_extractor.py    # FIR field extraction + IPC vs. BNS legal code validator
+│   │   │   └── invoice_extractor.py# Garage bill extraction + GSTIN Luhn checksum validator
+│   │   │
+│   │   ├── photo_forensics/        # FEATURE 2: Accident Image Analysis
+│   │   │   ├── __init__.py
+│   │   │   ├── phash_engine.py     # 64-bit Perceptual Hashing (pHash/dHash) for duplicates
+│   │   │   └── exif_inspector.py   # DateTime, GPS, and photo editing software tag scanner
+│   │   │
+│   │   ├── ml_scoring/             # FEATURE 3: Machine Learning Risk Classifier
+│   │   │   ├── __init__.py
+│   │   │   ├── model_loader.py     # Lazy model loading and lifecycle management
+│   │   │   ├── feature_builder.py  # Constructs normalized 7+ dimensional feature vector
+│   │   │   ├── predictor.py        # XGBoost / Random Forest inference
+│   │   │   └── explainer.py        # SHAP TreeExplainer for top risk factor attribution
+│   │   │
+│   │   ├── rule_engine/            # Deterministic IRDAI Insurance Business Rules
+│   │   │   ├── __init__.py
+│   │   │   ├── rules.py            # Constructive Total Loss (>75% IDV), Staged Accident (<14 days)
+│   │   │   └── evaluator.py        # Computes deterministic rule score & creates flags
+│   │   │
+│   │   ├── cross_claim/            # FEATURE 4: Multi-Claim & Fraud Ring Intelligence
+│   │   │   ├── __init__.py
+│   │   │   ├── hash_matcher.py     # Matches image hashes against historic database
+│   │   │   └── cluster_analyzer.py # Detects repeated vehicle/garage collusion patterns
+│   │   │
+│   │   └── copilot/                # FEATURE 5: AI Investigation Brief Synthesizer
+│   │       ├── __init__.py
+│   │       ├── prompt_templates.py # Guardrailed prompts (advisory only, no accusations)
+│   │       └── brief_generator.py  # Synthesizes OCR + Rules + ML + Forensics into memo
+│   │
+│   └── trained_artifacts/          # Versioned Serialized ML Models (gitignored if large)
+│       ├── .gitkeep
+│       ├── fraud_xgboost_v1.0.joblib
+│       └── scaler_v1.0.joblib
+│
+├── training/                       # Offline Model Training & Evaluation Harness
+│   ├── train.py                    # Training pipeline with Stratified K-Fold CV & class weights
+│   ├── evaluate.py                 # Precision, Recall, PR-AUC, F1 metrics & confusion matrix
+│   └── data/                       # Dataset directory (Kaggle dataset & synthetic data generator)
+│       └── .gitkeep
+│
+└── tests/                          # Automated Test Suite
+    ├── conftest.py                 # Pytest fixtures and mock requests
+    ├── test_api/                   # API endpoint tests (health, analyze-claim)
+    │   └── test_analyze_routes.py
+    ├── test_services/              # Unit tests for specific AI modules
+    │   ├── test_gstin_checksum.py  # Tests Luhn mod 36 validator
+    │   ├── test_bns_validator.py   # Tests 1 July 2024 IPC vs BNS date cut-off
+    │   ├── test_phash.py           # Tests duplicate image distance calculation
+    │   └── test_ml_scoring.py      # Tests inference and SHAP output
+    └── sample_fixtures/            # Redacted sample test PDFs and images
+        ├── sample_fir.pdf
+        ├── sample_invoice.png
+        └── damaged_car.jpg
