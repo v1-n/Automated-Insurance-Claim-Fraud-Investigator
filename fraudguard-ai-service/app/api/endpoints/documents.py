@@ -9,6 +9,11 @@ import pymupdf
 from datetime import datetime
 from fastapi import APIRouter
 from app.models.document_verify_request import DocumentVerifyRequest
+from app.models.document_verify_response import DocumentVerifyResponse
+from app.enums.severity import Severity
+from app.enums.verification_status import VerificationStatus
+
+from app.utils.file_downloader import download_file
 
 # Initialize logger for this module
 logger = logging.getLogger(__name__)
@@ -16,12 +21,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def download_and_extract_text(client:httpx.AsyncClient,doc_id:int,url:str)->tuple[str,list[dict]]:
+async def download_and_extract_text(client: httpx.AsyncClient, doc_id: int, url: str) -> tuple[str, list[dict]]:
     try:
-        res=await client.get(url)
-        res.raise_for_status()
-        raw_file=res.content
-        logger.info(f"[Doc #{doc_id}] Download complete ({len(raw_file)} bytes)")
+        downloaded = await download_file(url, item_tag=f"Doc #{doc_id}", client=client)
     except httpx.HTTPStatusError as e:
         logger.error(f"[Doc #{doc_id}] HTTP error downloading document: {e.response.status_code}")
         return f"[DOWNLOAD_FAILED: HTTP {e.response.status_code}]", []
@@ -29,17 +31,8 @@ async def download_and_extract_text(client:httpx.AsyncClient,doc_id:int,url:str)
         logger.error(f"[Doc #{doc_id}] Network error: {str(e)}", exc_info=True)
         return f"[DOWNLOAD_FAILED: {str(e)}]", []
 
-    # Detect file type
-    content_type = res.headers.get("content-type", "").lower()
-    if raw_file.startswith(b"%PDF") or "pdf" in content_type:
-        file_ext = "pdf"
-    elif "image/png" in content_type or url.lower().endswith(".png"):
-        file_ext = "png"
-    else:
-        file_ext = "jpg"
-
     try:
-        doc = pymupdf.open(stream=raw_file, filetype=file_ext)
+        doc = pymupdf.open(stream=downloaded.content, filetype=downloaded.file_ext)
     except Exception as e:
         logger.error(f"[Doc #{doc_id}] Failed to parse file with PyMuPDF: {str(e)}")
         return f"[CORRUPTED_DOCUMENT: {str(e)}]", []
@@ -88,9 +81,11 @@ def cross_check_ground_truth(doc_type: str, doc_id: int, text: str, ground_truth
             logger.warning(f"[Doc #{doc_id}] FLAG RAISED: Vehicle mismatch! Ground truth '{ground_truth.vehicle_number}' missing in {doc_type}")
             flags.append({
                 "code": f"{doc_type}_VEHICLE_MISMATCH",
-                "severity": "HIGH",
+                "severity": Severity.HIGH,
                 "document_id": doc_id,
-                "explanation": f"Vehicle number '{ground_truth.vehicle_number}' was not found in the {doc_type}."
+                "explanation": f"Vehicle number '{ground_truth.vehicle_number}' was not found in the {doc_type}.",
+                "benignExplanations": ["Blurry scan or OCR misread digits", "Typing error in police station report"],
+                "nextSteps": ["Request clean high-resolution scan", "Inspect physical document manual copy"]
             })
         else:
             logger.info(f"[Doc #{doc_id}] Vehicle number '{ground_truth.vehicle_number}' verified successfully in {doc_type}")
@@ -105,14 +100,16 @@ def cross_check_ground_truth(doc_type: str, doc_id: int, text: str, ground_truth
                 logger.warning(f"[Doc #{doc_id}] FLAG RAISED: Obsolete legal code (IPC cited for post-July-2024 incident)")
                 flags.append({
                     "code": "FIR_OBSOLETE_LEGAL_CODE",
-                    "severity": "MEDIUM",
+                    "severity": Severity.MEDIUM,
                     "document_id": doc_id,
-                    "explanation": "Incident is on/after 1 July 2024, but FIR cites IPC instead of BNS."
+                    "explanation": "Incident is on/after 1 July 2024, but FIR cites IPC instead of BNS.",
+                    "benignExplanations": ["Station used older FIR template software"],
+                    "nextSteps": ["Verify FIR authenticity with the registered police station"]
                 })
     return flags
 
 
-@router.post("/verify-document")
+@router.post("/verify-document", response_model=DocumentVerifyResponse)
 async def verify_documents(payload: DocumentVerifyRequest):
     logger.info(f"[{payload.tenant_id}] Received verification request for Claim #{payload.claim_id} with {len(payload.documents)} document(s)")
 
@@ -121,24 +118,25 @@ async def verify_documents(payload: DocumentVerifyRequest):
 
     async with httpx.AsyncClient() as client:
         for doc in payload.documents:
-            full_text,pages= await download_and_extract_text(client,doc.document_id,doc.document_url)
+            full_text, pages = await download_and_extract_text(client, doc.document_id, doc.document_url)
 
             # Cross-check rules
             doc_flags = cross_check_ground_truth(doc.document_type, doc.document_id, full_text, payload.ground_truth)
             flags.extend(doc_flags)
             extracted_docs.append({
                 "document_id": doc.document_id,
-                "document_type": doc.document_type,
+                "document_type": str(doc.document_type),
                 "text_length": len(full_text)
             })
 
-    status = "SUSPICIOUS" if any(f.get("severity") == "HIGH" for f in flags) else "PASSED"
+    status = VerificationStatus.SUSPICIOUS if any(f.get("severity") == Severity.HIGH for f in flags) else VerificationStatus.PASSED
     logger.info(
         f"[{payload.tenant_id}] Finished Claim #{payload.claim_id} analysis: Status={status}, Generated Flags={len(flags)}")
-    return {
-        "claim_id": payload.claim_id,
-        "verification_status": status,
-        "total_documents_analyzed": len(payload.documents),
-        "flags": flags,
-        "summary": f"Analyzed {len(payload.documents)} document(s). Generated {len(flags)} flag(s)."
-    }
+    return DocumentVerifyResponse(
+        claim_id=payload.claim_id,
+        verification_status=status,
+        total_documents_analyzed=len(payload.documents),
+        extracted_documents=extracted_docs,
+        flags=flags,
+        summary=f"Analyzed {len(payload.documents)} document(s). Generated {len(flags)} flag(s)."
+    )

@@ -9,3 +9,4 @@ python-multipart>=0.0.9
 httpx
 pytesseract>=0.3.10
 Pillow>=10.2.0
+imagehash
