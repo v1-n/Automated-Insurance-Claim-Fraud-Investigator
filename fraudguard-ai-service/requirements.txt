@@ -10,3 +10,4 @@ httpx
 pytesseract>=0.3.10
 Pillow>=10.2.0
 imagehash
+exifread>=3.0.0

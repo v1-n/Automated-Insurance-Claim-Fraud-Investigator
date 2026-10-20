@@ -1,9 +1,19 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Security: Only allow downloads from trusted hosts
+ALLOWED_HOSTS = [
+    "res.cloudinary.com",
+    "cloudinary.com",
+]
+
+# Maximum allowed download size: 25 MB
+MAX_DOWNLOAD_SIZE_BYTES = 25 * 1024 * 1024
 
 
 @dataclass
@@ -14,6 +24,18 @@ class DownloadedFile:
     content_type: str
 
 
+def _validate_url(url: str) -> None:
+    """Validates that the URL uses HTTPS and belongs to an allowed host."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only HTTP/HTTPS allowed.")
+    if parsed.hostname not in ALLOWED_HOSTS:
+        raise ValueError(
+            f"Host '{parsed.hostname}' is not in the allowed list. "
+            f"Only downloads from {ALLOWED_HOSTS} are permitted."
+        )
+
+
 async def download_file(
     url: str,
     item_tag: str = "File",
@@ -21,14 +43,23 @@ async def download_file(
     timeout: float = 25.0,
 ) -> DownloadedFile:
     """
-    Downloads a file asynchronously from Cloudinary or any public HTTP/HTTPS URL into memory.
+    Downloads a file asynchronously from Cloudinary or any allowed public HTTPS URL into memory.
+    Validates host allowlist and enforces a size limit.
     Detects file extension using magic bytes, Content-Type headers, and URL endings.
     """
+    _validate_url(url)
     logger.info(f"[{item_tag}] Initiating download from URL: {url[:70]}...")
 
     async def _fetch(c: httpx.AsyncClient) -> httpx.Response:
-        res = await c.get(url, timeout=timeout)
+        res = await c.get(url, timeout=timeout, follow_redirects=True)
         res.raise_for_status()
+
+        # Enforce size limit
+        if len(res.content) > MAX_DOWNLOAD_SIZE_BYTES:
+            raise ValueError(
+                f"File size ({len(res.content) / (1024 * 1024):.1f} MB) exceeds "
+                f"maximum allowed size ({MAX_DOWNLOAD_SIZE_BYTES / (1024 * 1024):.0f} MB)"
+            )
         return res
 
     if client:
@@ -58,3 +89,4 @@ async def download_file(
         size_bytes=len(raw_file),
         content_type=content_type,
     )
+

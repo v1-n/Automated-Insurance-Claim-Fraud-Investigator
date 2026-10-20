@@ -37,3 +37,7 @@ class PhotoInspectRequest(BaseModel):
     photo_id: int = Field(..., description="claim_doc_id in claim_documents table")
     photo_url: str = Field(..., description="Cloudinary URL of the uploaded accident photo")
     incident_context: IncidentPhotoContext = Field(..., description="Claim location and date context from database")
+    existing_hashes: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of historical pHashes from past claims to detect duplicates/recycled photos",
+    )
