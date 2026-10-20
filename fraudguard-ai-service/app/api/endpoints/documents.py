@@ -80,10 +80,34 @@ async def download_and_extract_text(client: httpx.AsyncClient, doc_id: int, url:
 def cross_check_ground_truth(doc_type: str, doc_id: int, text: str, ground_truth) -> list[dict]:
     flags = []
     clean_text = text.upper().replace(" ", "").replace("-", "")
-    target_vehicle = ground_truth.vehicle_number.upper().replace(" ", "").replace("-", "")
-    #  Vehicle Registration Check
+    target_vehicle = (ground_truth.vehicle_number or "").upper().replace(" ", "").replace("-", "").strip()
+
+    # Vehicle Registration Check
     if doc_type in ["FIR", "VEHICLE_DOCUMENT", "INVOICE"]:
-        if target_vehicle not in clean_text:
+        if not target_vehicle:
+            # Policy ground truth itself is missing the vehicle number!
+            logger.warning(f"[Doc #{doc_id}] FLAG RAISED: Empty vehicle number in ground truth for {doc_type}")
+            flags.append({
+                "code": "POLICY_VEHICLE_NUMBER_MISSING",
+                "severity": Severity.HIGH,
+                "document_id": doc_id,
+                "explanation": f"Vehicle registration number is empty or blank in claim ground truth. Cannot verify vehicle in {doc_type}.",
+                "benignExplanations": ["Claimant or agent submitted claim without entering vehicle registration number"],
+                "nextSteps": ["Request vehicle registration certificate (RC) and update claim details"]
+            })
+        elif len(target_vehicle) < 6:
+            # An Indian vehicle registration number has at least 6-10 characters (e.g. MH12AB1234, DL1A1234).
+            # A single letter like "j" or "abc" is an invalid dummy placeholder!
+            logger.warning(f"[Doc #{doc_id}] FLAG RAISED: Invalid short vehicle number '{ground_truth.vehicle_number}' in ground truth")
+            flags.append({
+                "code": "INVALID_VEHICLE_REGISTRATION_NUMBER",
+                "severity": Severity.HIGH,
+                "document_id": doc_id,
+                "explanation": f"Vehicle number '{ground_truth.vehicle_number}' is invalid or too short (< 6 characters). Valid Indian vehicle registrations have state code, district, and unique digits (e.g., MH12AB1234).",
+                "benignExplanations": ["User entered placeholder text during testing or form entry"],
+                "nextSteps": ["Request official RC smartcard or vehicle insurance certificate copy"]
+            })
+        elif target_vehicle not in clean_text:
             logger.warning(f"[Doc #{doc_id}] FLAG RAISED: Vehicle mismatch! Ground truth '{ground_truth.vehicle_number}' missing in {doc_type}")
             flags.append({
                 "code": f"{doc_type}_VEHICLE_MISMATCH",
@@ -95,6 +119,7 @@ def cross_check_ground_truth(doc_type: str, doc_id: int, text: str, ground_truth
             })
         else:
             logger.info(f"[Doc #{doc_id}] Vehicle number '{ground_truth.vehicle_number}' verified successfully in {doc_type}")
+
     #  Legal Code Check (BNS vs. IPC)
     if doc_type == "FIR":
         cutoff_date = datetime(2024, 7, 1).date()
