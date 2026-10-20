@@ -1,6 +1,7 @@
 import io
 import logging
-from datetime import datetime
+import math
+from datetime import date, datetime
 import exifread
 from fastapi import APIRouter, HTTPException
 import httpx
@@ -29,6 +30,9 @@ MAX_PHOTO_SIZE_BYTES = 15 * 1024 * 1024
 DUPLICATE_EXACT_DISTANCE = 0
 DUPLICATE_SIMILAR_DISTANCE = 5
 
+# GPS Distance Thresholds (km)
+GPS_PROXIMITY_KM = 50.0  # Within 50km is considered consistent/acceptable for city perimeter
+
 
 def convert_to_degrees(value) -> float | None:
     """Helper to convert the GPS ratio lists into a single float degree."""
@@ -41,6 +45,19 @@ def convert_to_degrees(value) -> float | None:
         return d + (m / 60.0) + (s / 3600.0)
     except Exception:
         return None
+
+
+def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates great-circle distance between two GPS coordinates in kilometers."""
+    R = 6371.0  # Earth's radius in kilometers
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2.0) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2
+    )
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
 
 
 async def download_and_phash(client: httpx.AsyncClient, photo_id: int, url: str) -> tuple[bytes, str, imagehash.ImageHash]:
@@ -106,19 +123,25 @@ async def inspect_photo(payload: PhotoInspectRequest):
                 )
             )
 
+    # Normalize incident date to a timezone-naive date object
+    incident_val = payload.incident_context.incident_date
+    if isinstance(incident_val, datetime):
+        # Convert timezone-aware to naive date safely
+        incident_date = incident_val.date()
+    elif isinstance(incident_val, date):
+        incident_date = incident_val
+    else:
+        incident_date = date.today()
+
+    today = date.today()
+
     # 4. Check capture date vs claimed incident date (Graduated Tolerance Rules)
     if captured_at:
         try:
-            # EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
-            photo_dt = datetime.strptime(captured_at.strip(), "%Y:%m:%d %H:%M:%S")
-
-            incident_dt = payload.incident_context.incident_date
-            if not isinstance(incident_dt, datetime):
-                incident_dt = datetime.combine(incident_dt, datetime.min.time())
-
-            # Calendar date comparison
+            # Standard EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
+            clean_date_str = captured_at.strip()
+            photo_dt = datetime.strptime(clean_date_str[:19], "%Y:%m:%d %H:%M:%S")
             photo_date = photo_dt.date()
-            incident_date = incident_dt.date()
             day_diff = (photo_date - incident_date).days
 
             if day_diff < 0:
@@ -140,7 +163,7 @@ async def inspect_photo(payload: PhotoInspectRequest):
                 # Same calendar day -> legitimate, no mismatch flag raised
                 logger.info(f"[Photo #{payload.photo_id}] Photo capture date matches incident date ({photo_date})")
             elif day_diff == 1:
-                # 1 day later -> LOW severity review flag (often normal for delayed reporting)
+                # 1 day later -> LOW severity review flag (normal for next-day reporting)
                 flags.append(
                     PhotoFlag(
                         code="PHOTO_INCIDENT_DATE_MISMATCH_MINOR",
@@ -182,37 +205,53 @@ async def inspect_photo(payload: PhotoInspectRequest):
                     )
                 )
         except Exception as e:
-            logger.debug(f"[Photo #{payload.photo_id}] Could not parse EXIF datetime '{captured_at}': {e}")
+            logger.warning(f"[Photo #{payload.photo_id}] Malformed or unparseable EXIF datetime '{captured_at}': {e}")
+            flags.append(
+                PhotoFlag(
+                    code="PHOTO_EXIF_DATE_CORRUPTED",
+                    severity=Severity.MEDIUM,
+                    explanation=(
+                        f"Photo contains EXIF date tag '{captured_at}', but it could not be parsed as a valid datetime. "
+                        "Date verification is inconclusive."
+                    ),
+                    benignExplanations=["Camera firmware wrote non-standard date format"],
+                    nextSteps=["Inspect physical phone file details or request raw uncompressed photo"],
+                )
+            )
+    elif exif_found and not captured_at:
+        # Camera metadata exists (e.g. make/model), but DateTimeOriginal is absent
+        flags.append(
+            PhotoFlag(
+                code="PHOTO_CAPTURE_DATE_UNAVAILABLE",
+                severity=Severity.LOW,
+                explanation="Photo contains camera metadata, but no timestamp or capture date was recorded by the device.",
+                benignExplanations=["Camera app privacy setting disabled saving capture time"],
+                nextSteps=["Verify incident date against repair estimate or workshop intake receipt"],
+            )
+        )
 
-    # 4b. Incident Date Sanity Checks (Evaluated against current date regardless of EXIF)
-    now = datetime.now()
-    incident_dt_val = payload.incident_context.incident_date
-    if not isinstance(incident_dt_val, datetime):
-        incident_dt_val = datetime.combine(incident_dt_val, datetime.min.time())
-
-    # Future incident date check (>1 day in future)
-    if (incident_dt_val - now).total_seconds() > 86400:
+    # 4b. Incident Date Sanity Checks (Evaluated against calendar date)
+    if incident_date > today:
         flags.append(
             PhotoFlag(
                 code="INCIDENT_DATE_IN_FUTURE",
                 severity=Severity.HIGH,
                 explanation=(
-                    f"Claimed incident date ({incident_dt_val.strftime('%Y-%m-%d')}) is in the future. "
+                    f"Claimed incident date ({incident_date}) is in the future. "
                     "An incident cannot occur ahead of current date."
                 ),
                 benignExplanations=["Date entry error during claim registration"],
                 nextSteps=["Verify original policyholder claim form and re-enter correct date"],
             )
         )
-    # Stale claim check (> 365 days ago)
-    elif (now - incident_dt_val).total_seconds() > (365 * 86400):
-        days_ago = int((now - incident_dt_val).total_seconds() // 86400)
+    elif (today - incident_date).days > 365:
+        days_ago = (today - incident_date).days
         flags.append(
             PhotoFlag(
                 code="INCIDENT_DATE_SEVERELY_DELAYED",
                 severity=Severity.MEDIUM,
                 explanation=(
-                    f"Claimed incident date ({incident_dt_val.strftime('%Y-%m-%d')}) is {days_ago} days old (>1 year). "
+                    f"Claimed incident date ({incident_date}) is {days_ago} days old (>1 year). "
                     "Claim filed with excessive delay."
                 ),
                 benignExplanations=["Legal dispute or delayed third-party claim settlement"],
@@ -221,7 +260,6 @@ async def inspect_photo(payload: PhotoInspectRequest):
         )
 
     # 5. FLAG: Missing EXIF metadata entirely
-    # Missing EXIF is noted for review, but is NOT conclusive proof of fraud.
     if not exif_found:
         flags.append(
             PhotoFlag(
@@ -259,6 +297,41 @@ async def inspect_photo(payload: PhotoInspectRequest):
         gps_longitude = convert_to_degrees(lon_tag.values)
         if str(lon_ref).strip().upper() == "W" and gps_longitude is not None:
             gps_longitude = -gps_longitude
+
+    # 6b. Compare Photo GPS with Claim Incident Location (if both are provided)
+    inc_lat = payload.incident_context.incident_latitude
+    inc_lon = payload.incident_context.incident_longitude
+
+    if gps_latitude is not None and gps_longitude is not None:
+        if inc_lat is not None and inc_lon is not None and (inc_lat != 0.0 or inc_lon != 0.0):
+            distance_km = calculate_haversine_distance(gps_latitude, gps_longitude, inc_lat, inc_lon)
+            if distance_km > GPS_PROXIMITY_KM:
+                flags.append(
+                    PhotoFlag(
+                        code="PHOTO_LOCATION_MISMATCH",
+                        severity=Severity.HIGH,
+                        explanation=(
+                            f"Photo GPS coordinates ({gps_latitude:.4f}, {gps_longitude:.4f}) are "
+                            f"{distance_km:.1f} km away from claimed incident location "
+                            f"({inc_lat:.4f}, {inc_lon:.4f}), exceeding {GPS_PROXIMITY_KM} km limit."
+                        ),
+                        benignExplanations=[
+                            "Vehicle was towed to a garage or residence in a different city before photo was taken",
+                            "Claimant entered inaccurate incident coordinates",
+                        ],
+                        nextSteps=[
+                            "Cross-reference towing receipts or workshop job card address",
+                            "Ask surveyor to verify location where vehicle is currently parked",
+                        ],
+                    )
+                )
+            else:
+                logger.info(
+                    f"[Photo #{payload.photo_id}] Photo GPS matches incident location (Distance: {distance_km:.1f} km)"
+                )
+    elif exif_found and (gps_latitude is None or gps_longitude is None):
+        # Camera has EXIF but GPS location was turned off
+        logger.info(f"[Photo #{payload.photo_id}] Photo has EXIF but no GPS coordinates (location services disabled)")
 
     # 7. Cross-Claim Perceptual Hash Duplicate Detection
     if payload.existing_hashes:
@@ -307,7 +380,6 @@ async def inspect_photo(payload: PhotoInspectRequest):
                     break
             except Exception as e:
                 logger.warning(f"[Photo #{payload.photo_id}] Error comparing past pHash '{past_hash_str}': {e}")
-
 
     forensic_details = PhotoForensicDetails(
         camera_make=camera_make,
