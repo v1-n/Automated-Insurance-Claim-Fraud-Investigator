@@ -17,6 +17,7 @@ class ExtractedDocumentSummary(BaseModel):
     document_id: int
     document_type: str
     text_length: int
+    extraction_failed: bool = False
 
 
 class DocumentVerifyResponse(BaseModel):

@@ -27,8 +27,8 @@ class DownloadedFile:
 def _validate_url(url: str) -> None:
     """Validates that the URL uses HTTPS and belongs to an allowed host."""
     parsed = urlparse(url)
-    if parsed.scheme not in ("https", "http"):
-        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only HTTP/HTTPS allowed.")
+    if parsed.scheme != "https":
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only HTTPS is allowed.")
     if parsed.hostname not in ALLOWED_HOSTS:
         raise ValueError(
             f"Host '{parsed.hostname}' is not in the allowed list. "
@@ -43,33 +43,39 @@ async def download_file(
     timeout: float = 25.0,
 ) -> DownloadedFile:
     """
-    Downloads a file asynchronously from Cloudinary or any allowed public HTTPS URL into memory.
-    Validates host allowlist and enforces a size limit.
-    Detects file extension using magic bytes, Content-Type headers, and URL endings.
+    Downloads a file asynchronously from Cloudinary or any allowed public HTTPS URL.
+    Streams the response and enforces a byte cap to prevent OOM on large files.
+    Validates host allowlist and rejects non-HTTPS URLs.
+    Redirects are disabled to prevent SSRF via open redirect chains.
     """
     _validate_url(url)
     logger.info(f"[{item_tag}] Initiating download from URL: {url[:70]}...")
 
-    async def _fetch(c: httpx.AsyncClient) -> httpx.Response:
-        res = await c.get(url, timeout=timeout, follow_redirects=True)
-        res.raise_for_status()
+    async def _stream_download(c: httpx.AsyncClient) -> tuple[bytes, str]:
+        """Streams the response body and enforces MAX_DOWNLOAD_SIZE_BYTES."""
+        async with c.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "").lower()
 
-        # Enforce size limit
-        if len(res.content) > MAX_DOWNLOAD_SIZE_BYTES:
-            raise ValueError(
-                f"File size ({len(res.content) / (1024 * 1024):.1f} MB) exceeds "
-                f"maximum allowed size ({MAX_DOWNLOAD_SIZE_BYTES / (1024 * 1024):.0f} MB)"
-            )
-        return res
+            chunks = []
+            total_bytes = 0
+            async for chunk in response.aiter_bytes(chunk_size=65_536):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_DOWNLOAD_SIZE_BYTES:
+                    raise ValueError(
+                        f"File exceeds maximum allowed size "
+                        f"({MAX_DOWNLOAD_SIZE_BYTES / (1024 * 1024):.0f} MB). "
+                        f"Download aborted at {total_bytes / (1024 * 1024):.1f} MB."
+                    )
+                chunks.append(chunk)
+
+            return b"".join(chunks), content_type
 
     if client:
-        res = await _fetch(client)
+        raw_file, content_type = await _stream_download(client)
     else:
         async with httpx.AsyncClient() as new_client:
-            res = await _fetch(new_client)
-
-    raw_file = res.content
-    content_type = res.headers.get("content-type", "").lower()
+            raw_file, content_type = await _stream_download(new_client)
 
     # Detect file type using magic bytes, content-type headers, and URL extension
     if raw_file.startswith(b"%PDF") or "pdf" in content_type or url.lower().endswith(".pdf"):
@@ -89,4 +95,3 @@ async def download_file(
         size_bytes=len(raw_file),
         content_type=content_type,
     )
-

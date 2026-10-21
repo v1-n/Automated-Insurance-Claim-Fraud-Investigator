@@ -78,6 +78,18 @@ async def download_and_phash(client: httpx.AsyncClient, photo_id: int, url: str)
     return downloaded.content, phash_val, phash_obj
 
 
+def determine_photo_status(flags: list[PhotoFlag], exif_found: bool) -> VerificationStatus:
+    """Determines the verification status based on flags and EXIF presence."""
+    if any(f.severity == Severity.HIGH for f in flags):
+        return VerificationStatus.SUSPICIOUS
+    elif not exif_found:
+        return VerificationStatus.UNVERIFIABLE
+    elif any(f.severity == Severity.MEDIUM for f in flags):
+        return VerificationStatus.SUSPICIOUS
+    else:
+        return VerificationStatus.PASSED
+
+
 @router.post("/inspect-photo", response_model=PhotoInspectResponse)
 async def inspect_photo(payload: PhotoInspectRequest):
     logger.info(
@@ -230,35 +242,6 @@ async def inspect_photo(payload: PhotoInspectRequest):
             )
         )
 
-    # 4b. Incident Date Sanity Checks (Evaluated against calendar date)
-    if incident_date > today:
-        flags.append(
-            PhotoFlag(
-                code="INCIDENT_DATE_IN_FUTURE",
-                severity=Severity.HIGH,
-                explanation=(
-                    f"Claimed incident date ({incident_date}) is in the future. "
-                    "An incident cannot occur ahead of current date."
-                ),
-                benignExplanations=["Date entry error during claim registration"],
-                nextSteps=["Verify original policyholder claim form and re-enter correct date"],
-            )
-        )
-    elif (today - incident_date).days > 365:
-        days_ago = (today - incident_date).days
-        flags.append(
-            PhotoFlag(
-                code="INCIDENT_DATE_SEVERELY_DELAYED",
-                severity=Severity.MEDIUM,
-                explanation=(
-                    f"Claimed incident date ({incident_date}) is {days_ago} days old (>1 year). "
-                    "Claim filed with excessive delay."
-                ),
-                benignExplanations=["Legal dispute or delayed third-party claim settlement"],
-                nextSteps=["Request explanation and police/court records for reporting delay"],
-            )
-        )
-
     # 5. FLAG: Missing EXIF metadata entirely
     if not exif_found:
         flags.append(
@@ -390,20 +373,7 @@ async def inspect_photo(payload: PhotoInspectRequest):
         gps_longitude=gps_longitude,
     )
 
-    # Determine final verification status based on flags:
-    # - Any HIGH severity flag -> SUSPICIOUS
-    # - Missing EXIF without any other high-severity flags -> UNVERIFIABLE
-    # - Only LOW severity flags -> PASSED (1-day mismatch is advisory review, not fraud!)
-    # - MEDIUM flags without high -> SUSPICIOUS
-    # - No flags -> PASSED
-    if any(f.severity == Severity.HIGH for f in flags):
-        status = VerificationStatus.SUSPICIOUS
-    elif not exif_found:
-        status = VerificationStatus.UNVERIFIABLE
-    elif any(f.severity == Severity.MEDIUM for f in flags):
-        status = VerificationStatus.SUSPICIOUS
-    else:
-        status = VerificationStatus.PASSED
+    status = determine_photo_status(flags, exif_found)
 
     summary = (
         f"Photo #{payload.photo_id} analyzed (pHash: {phash_val}). Generated {len(flags)} forensic flag(s)."

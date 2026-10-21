@@ -7,8 +7,11 @@ Orchestrates complete claim fraud verification by analyzing uploaded documents
 business rules, and producing an aggregated risk score and evidence flags.
 """
 
+import asyncio
 import logging
-from fastapi import APIRouter
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, Depends
 import httpx
 
 from app.enums.severity import Severity
@@ -27,6 +30,7 @@ from app.models.analyze_claim_response import (
 from app.api.endpoints.documents import download_and_extract_text, cross_check_ground_truth
 from app.api.endpoints.photos import inspect_photo
 from app.models.photo_inspect_request import PhotoInspectRequest, IncidentPhotoContext
+from app.utils.auth import verify_internal_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
@@ -80,7 +84,7 @@ def calculate_claim_risk_score(
     return score, risk_level, recommendation
 
 
-@router.post("/analyze-claim", response_model=AnalyzeClaimResponse)
+@router.post("/analyze-claim", response_model=AnalyzeClaimResponse, dependencies=[Depends(verify_internal_key)])
 async def analyze_claim(payload: AnalyzeClaimRequest):
     """
     Orchestrate full fraud analysis for a submitted insurance claim.
@@ -126,7 +130,7 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                         flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
                         code=f"{doc.document_type}_EXTRACTION_FAILED",
                         category="DOCUMENT_INCONSISTENCY",
-                        severity=Severity.HIGH,
+                        severity=Severity.MEDIUM,
                         source="document-ocr",
                         explanation=f"Could not read or download {doc.document_type} (Doc #{doc.claim_doc_id}).",
                         benign_explanations=["Scanned image is low resolution or file was corrupted during upload"],
@@ -188,7 +192,28 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                 existing_hashes=photo.existing_hashes,
             )
 
-            photo_res = await inspect_photo(photo_req)
+            try:
+                photo_res = await inspect_photo(photo_req)
+            except Exception as e:
+                logger.error(
+                    f"[Photo #{photo.claim_doc_id}] Failed to download/inspect photo: {e}",
+                    exc_info=True,
+                )
+                all_flags.append(
+                    ClaimEvidenceFlag(
+                        flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
+                        code="PHOTO_DOWNLOAD_FAILED",
+                        category="PHOTO_FORENSICS",
+                        severity=Severity.MEDIUM,
+                        source="photo-forensics",
+                        explanation=f"Could not download or inspect photo (Doc #{photo.claim_doc_id}): {str(e)}",
+                        benign_explanations=["Temporary network issue or invalid image URL"],
+                        next_steps=["Request claimant to re-upload photo"],
+                        confidence=0.90,
+                    )
+                )
+                flag_idx += 1
+                continue
             photo_hashes.append(
                 PhotoHashResult(claim_doc_id=photo.claim_doc_id, phash=photo_res.phash)
             )
@@ -247,6 +272,49 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                 benign_explanations=["Constructive total loss case requiring salvage valuation"],
                 next_steps=["Order physical inspection and evaluate scrap salvage value"],
                 confidence=0.95,
+            )
+        )
+        flag_idx += 1
+
+    # Rule: Incident date sanity checks (using IST to avoid false positives near midnight)
+    ist = ZoneInfo("Asia/Kolkata")
+    today_ist = datetime.now(ist).date()
+    inc_date_for_sanity = gt.incident_date.date() if hasattr(gt.incident_date, "date") and callable(gt.incident_date.date) else gt.incident_date
+
+    if inc_date_for_sanity > today_ist:
+        all_flags.append(
+            ClaimEvidenceFlag(
+                flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
+                code="INCIDENT_DATE_IN_FUTURE",
+                category="CLAIM_RULES",
+                severity=Severity.HIGH,
+                source="claim-rules",
+                explanation=(
+                    f"Claimed incident date ({inc_date_for_sanity}) is in the future "
+                    f"(today IST: {today_ist}). An incident cannot occur ahead of current date."
+                ),
+                benign_explanations=["Date entry error during claim registration"],
+                next_steps=["Verify original policyholder claim form and re-enter correct date"],
+                confidence=0.99,
+            )
+        )
+        flag_idx += 1
+    elif (today_ist - inc_date_for_sanity).days > 365:
+        days_ago = (today_ist - inc_date_for_sanity).days
+        all_flags.append(
+            ClaimEvidenceFlag(
+                flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
+                code="INCIDENT_DATE_SEVERELY_DELAYED",
+                category="CLAIM_RULES",
+                severity=Severity.MEDIUM,
+                source="claim-rules",
+                explanation=(
+                    f"Claimed incident date ({inc_date_for_sanity}) is {days_ago} days old (>1 year). "
+                    "Claim filed with excessive delay."
+                ),
+                benign_explanations=["Legal dispute or delayed third-party claim settlement"],
+                next_steps=["Request explanation and police/court records for reporting delay"],
+                confidence=0.90,
             )
         )
         flag_idx += 1

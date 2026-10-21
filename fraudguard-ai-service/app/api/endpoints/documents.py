@@ -3,6 +3,7 @@
 # 3. Cross-check against payload.ground_truth (Vehicle number, GSTIN, BNS vs IPC, Dates)
 # 4. Return DocumentVerifyResponse
 
+import asyncio
 import logging
 import httpx
 import pymupdf
@@ -53,7 +54,9 @@ async def download_and_extract_text(client: httpx.AsyncClient, doc_id: int, url:
             logger.warning(f"[Doc #{doc_id} | Page {page_num}] No digital text found; invoking Tesseract OCR...")
 
             try:
-                ocr_page = page.get_textpage_ocr(language="eng", dpi=300, full=True)
+                ocr_page = await asyncio.to_thread(
+                    page.get_textpage_ocr, language="eng", dpi=300, full=True
+                )
                 page_text = page.get_text(textpage=ocr_page)
                 logger.info(f"[Doc #{doc_id} | Page {page_num}] OCR extraction completed ({len(page_text)} chars)")
             except Exception as e:
