@@ -30,7 +30,7 @@ async def verify_internal_key(key: str = Security(_api_key_header)):
             "and AUTH_DISABLED is not enabled. Rejecting request."
         )
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail="Server authentication configuration error: AI_INTERNAL_KEY is not configured.",
         )
 

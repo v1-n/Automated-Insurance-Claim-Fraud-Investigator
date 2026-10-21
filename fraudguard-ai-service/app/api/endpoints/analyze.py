@@ -115,12 +115,19 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
         # 1. Concurrent Document Processing
         async def process_document(doc):
             async with semaphore:
-                full_text, pages, error_type = await download_and_extract_text(
-                    client=client,
-                    doc_id=doc.claim_doc_id,
-                    url=doc.document_url,
-                )
-                return doc, full_text, pages, error_type
+                try:
+                    full_text, pages, error_type = await download_and_extract_text(
+                        client=client,
+                        doc_id=doc.claim_doc_id,
+                        url=doc.document_url,
+                    )
+                    return doc, full_text, pages, error_type
+                except Exception as e:
+                    logger.error(
+                        f"[Doc #{doc.claim_doc_id}] Unexpected error processing document: {e}",
+                        exc_info=True,
+                    )
+                    return doc, "", [], "DOWNLOAD_FAILED"
 
         # 2. Concurrent Photo Processing
         incident_context = IncidentPhotoContext(
@@ -151,14 +158,30 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                     )
                     return photo, None, str(e)
 
-        # Run document & photo processing concurrently
+        # Run document & photo processing concurrently with failure isolation
         doc_tasks = [process_document(doc) for doc in payload.documents]
         photo_tasks = [process_photo(photo) for photo in payload.photos]
 
-        doc_results, photo_results = await asyncio.gather(
-            asyncio.gather(*doc_tasks),
-            asyncio.gather(*photo_tasks),
+        doc_raw_results, photo_raw_results = await asyncio.gather(
+            asyncio.gather(*doc_tasks, return_exceptions=True),
+            asyncio.gather(*photo_tasks, return_exceptions=True),
         )
+
+        doc_results = []
+        for i, res in enumerate(doc_raw_results):
+            if isinstance(res, Exception):
+                logger.error(f"[Doc task {i}] Task crashed with exception: {res}", exc_info=True)
+                doc_results.append((payload.documents[i], "", [], "DOWNLOAD_FAILED"))
+            else:
+                doc_results.append(res)
+
+        photo_results = []
+        for i, res in enumerate(photo_raw_results):
+            if isinstance(res, Exception):
+                logger.error(f"[Photo task {i}] Task crashed with exception: {res}", exc_info=True)
+                photo_results.append((payload.photos[i], None, str(res)))
+            else:
+                photo_results.append(res)
 
         # Process Document Results
         for doc, full_text, pages, error_type in doc_results:

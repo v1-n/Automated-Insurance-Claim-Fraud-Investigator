@@ -82,14 +82,16 @@ class TestVehicleMatcher(unittest.TestCase):
         self.assertEqual(len(flags), 0)
 
     def test_ocr_normalized_character_match(self):
-        # Letter 'O' instead of digit '0'
+        # Letter 'O' instead of digit '0' -> generates LOW severity NEAR match flag
         flags = evaluate_vehicle_registration(
             doc_type="FIR",
             doc_id=1,
             text="Vehicle registration KA53C1O95 was inspected.",
             vehicle_number="KA53C1095",
         )
-        self.assertEqual(len(flags), 0)
+        self.assertEqual(len(flags), 1)
+        self.assertEqual(flags[0]["code"], "FIR_VEHICLE_NEAR_MATCH")
+        self.assertEqual(flags[0]["severity"], Severity.LOW)
 
     def test_near_match_gives_low_severity_advisory(self):
         # 1 character error e.g. B vs 8 or single digit flip

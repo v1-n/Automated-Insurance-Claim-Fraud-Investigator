@@ -134,39 +134,49 @@ def evaluate_vehicle_registration(doc_type: str, doc_id: int, text: str, vehicle
             "nextSteps": ["Request official RC smartcard or vehicle insurance certificate copy"]
         }]
 
-    # 1. EXACT / OCR-NORMALIZED MATCH
-    if target_vehicle in clean_text or _normalize_ocr_characters(target_vehicle) in _normalize_ocr_characters(clean_text):
-        logger.info(f"[Doc #{doc_id}] Vehicle number '{vehicle_number}' matched successfully in {doc_type}")
+    # 1. EXACT SUBSTRING MATCH (No flags, 100% clean)
+    if target_vehicle in clean_text:
+        logger.info(f"[Doc #{doc_id}] Vehicle number '{vehicle_number}' matched exactly in {doc_type}")
         return []
 
-    # 2. SCAN FOR NEAR MATCHES AND CONFLICTING PLATES
-    # Standard Indian vehicle plate pattern: State(2) + District(1-2) + Series(0-3) + Digits(4)
+    # 2. OCR NORMALIZED CHARACTER MATCH (O/0, I/1, S/5, B/8, Z/2, L/1 substitution)
+    # Emit a LOW severity NEAR flag so investigators see the OCR correction
+    if _normalize_ocr_characters(target_vehicle) in _normalize_ocr_characters(clean_text):
+        logger.info(f"[Doc #{doc_id}] Vehicle number '{vehicle_number}' matched via OCR normalization in {doc_type}")
+        return [{
+            "code": f"{doc_type}_VEHICLE_NEAR_MATCH",
+            "severity": Severity.LOW,
+            "document_id": doc_id,
+            "explanation": (
+                f"Vehicle registration in {doc_type} matches ground truth with character substitution "
+                f"(e.g. O/0, I/1, S/5, B/8, Z/2). Likely OCR distortion of '{vehicle_number}'."
+            ),
+            "benignExplanations": ["Font or stamp noise on physical document caused character substitution in OCR"],
+            "nextSteps": ["Verify original document image to confirm plate number"]
+        }]
+
+    # 3. SCAN FOR CANDIDATE PLATE TOKENS (Strictly alphanumeric with letters AND digits)
     plate_regex = re.compile(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}')
     detected_plates = plate_regex.findall(clean_text)
 
-    # Check candidate windows in text around target length
+    # Find words/tokens containing both letters and digits within length bounds (prevents false matches on prose)
     t_len = len(target_vehicle)
+    alphanumeric_tokens = re.findall(r'[A-Z0-9]{6,12}', clean_text)
+    candidate_tokens = set(detected_plates)
+    for token in alphanumeric_tokens:
+        if abs(len(token) - t_len) <= 2 and any(c.isalpha() for c in token) and any(c.isdigit() for c in token):
+            candidate_tokens.add(token)
+
     best_ratio = 0.0
     best_candidate = ""
-
-    # Check detected plates first
-    for plate in detected_plates:
-        ratio = SequenceMatcher(None, target_vehicle, plate).ratio()
+    for token in candidate_tokens:
+        ratio = SequenceMatcher(None, target_vehicle, token).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
-            best_candidate = plate
+            best_candidate = token
 
-    # Also check sliding windows across text
-    step = max(1, t_len // 2)
-    for i in range(0, max(1, len(clean_text) - t_len + 1), step):
-        window = clean_text[i:i + t_len]
-        ratio = SequenceMatcher(None, target_vehicle, window).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_candidate = window
-
-    # 3. NEAR MATCH (Threshold >= 0.78 e.g. 1-2 character OCR substitution error)
-    if best_ratio >= 0.78:
+    # 4. NEAR MATCH (Similarity >= 0.82 on valid plate candidate)
+    if best_ratio >= 0.82:
         logger.info(
             f"[Doc #{doc_id}] Vehicle near match in {doc_type}: target '{target_vehicle}' vs detected '{best_candidate}' ({best_ratio*100:.0f}%)"
         )
