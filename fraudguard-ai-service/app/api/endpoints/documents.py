@@ -1,6 +1,7 @@
 import asyncio
 from difflib import SequenceMatcher
 import logging
+import os
 import re
 from datetime import datetime
 import httpx
@@ -15,6 +16,9 @@ from app.utils.file_downloader import download_file
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Multilingual OCR support (defaulting to English + Hindi for Indian documents)
+OCR_LANGUAGES = os.getenv("OCR_LANGUAGES", "eng+hin")
 
 
 async def download_and_extract_text(
@@ -58,9 +62,15 @@ async def download_and_extract_text(
             logger.warning(f"[Doc #{doc_id} | Page {page_num}] No digital text found; invoking Tesseract OCR...")
 
             try:
-                ocr_page = await asyncio.to_thread(
-                    page.get_textpage_ocr, language="eng", dpi=300, full=True
-                )
+                try:
+                    ocr_page = await asyncio.to_thread(
+                        page.get_textpage_ocr, language=OCR_LANGUAGES, dpi=300, full=True
+                    )
+                except Exception:
+                    # Fallback to English if regional language pack is unavailable
+                    ocr_page = await asyncio.to_thread(
+                        page.get_textpage_ocr, language="eng", dpi=300, full=True
+                    )
                 page_text = page.get_text(textpage=ocr_page)
                 logger.info(f"[Doc #{doc_id} | Page {page_num}] OCR extraction completed ({len(page_text)} chars)")
             except Exception as e:
