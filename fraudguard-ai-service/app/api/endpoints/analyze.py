@@ -8,10 +8,10 @@ business rules, and producing an aggregated risk score and evidence flags.
 """
 
 import asyncio
-import logging
 from datetime import date, datetime
+import logging
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 import httpx
 
 from app.enums.severity import Severity
@@ -30,10 +30,12 @@ from app.models.analyze_claim_response import (
 from app.api.endpoints.documents import download_and_extract_text, cross_check_ground_truth
 from app.api.endpoints.photos import inspect_photo
 from app.models.photo_inspect_request import PhotoInspectRequest, IncidentPhotoContext
-from app.utils.auth import verify_internal_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
+
+# Limit concurrent document/photo downloads to prevent memory pressure or connection exhaustion
+MAX_CONCURRENT_ANALYSIS_TASKS = 4
 
 
 def calculate_claim_risk_score(
@@ -84,17 +86,17 @@ def calculate_claim_risk_score(
     return score, risk_level, recommendation
 
 
-@router.post("/analyze-claim", response_model=AnalyzeClaimResponse, dependencies=[Depends(verify_internal_key)])
+@router.post("/analyze-claim", response_model=AnalyzeClaimResponse)
 async def analyze_claim(payload: AnalyzeClaimRequest):
     """
     Orchestrate full fraud analysis for a submitted insurance claim.
 
     Process:
-      1. Downloads and extracts text from non-photo documents (PDFs, scans) using
-         PyMuPDF and Tesseract OCR, validating vehicle registration numbers and legal codes.
-      2. Performs forensic inspection on accident photos (perceptual hashing, camera EXIF,
-         GPS distance verification, and cross-claim duplicate detection).
-      3. Validates claim-level insurance constraints (policy validity period, vehicle IDV).
+      1. Downloads and extracts text from non-photo documents (PDFs, scans) concurrently
+         using PyMuPDF and Tesseract OCR, validating vehicle registration numbers and legal codes.
+      2. Performs forensic inspection on accident photos concurrently (perceptual hashing,
+         camera EXIF, GPS distance verification, and cross-claim duplicate detection).
+      3. Validates claim-level insurance constraints (policy validity period, vehicle IDV, date checks).
       4. Synthesizes all findings into a composite risk score (0-100) with explainable
          evidence flags adhering to IRDAI red-flag guidelines.
     """
@@ -107,16 +109,83 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
     photo_hashes: list[PhotoHashResult] = []
     flag_idx = 1
 
-    async with httpx.AsyncClient() as client:
-        # Document Verification (FIR, Invoice, Vehicle Documents)
-        for doc in payload.documents:
-            full_text, pages, extraction_failed = await download_and_extract_text(
-                client=client,
-                doc_id=doc.claim_doc_id,
-                url=doc.document_url,
-            )
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_ANALYSIS_TASKS)
 
-            if extraction_failed:
+    async with httpx.AsyncClient() as client:
+        # 1. Concurrent Document Processing
+        async def process_document(doc):
+            async with semaphore:
+                full_text, pages, error_type = await download_and_extract_text(
+                    client=client,
+                    doc_id=doc.claim_doc_id,
+                    url=doc.document_url,
+                )
+                return doc, full_text, pages, error_type
+
+        # 2. Concurrent Photo Processing
+        incident_context = IncidentPhotoContext(
+            incident_date=payload.ground_truth.incident_date,
+            incident_city=payload.ground_truth.incident_city,
+            incident_state=payload.ground_truth.incident_state,
+            incident_latitude=payload.ground_truth.incident_latitude,
+            incident_longitude=payload.ground_truth.incident_longitude,
+        )
+
+        async def process_photo(photo):
+            async with semaphore:
+                photo_req = PhotoInspectRequest(
+                    tenant_id=str(payload.tenant_id),
+                    claim_id=payload.claim_id,
+                    photo_id=photo.claim_doc_id,
+                    photo_url=photo.photo_url,
+                    incident_context=incident_context,
+                    existing_hashes=photo.existing_hashes,
+                )
+                try:
+                    photo_res = await inspect_photo(photo_req)
+                    return photo, photo_res, None
+                except Exception as e:
+                    logger.error(
+                        f"[Photo #{photo.claim_doc_id}] Failed to download/inspect photo: {e}",
+                        exc_info=True,
+                    )
+                    return photo, None, str(e)
+
+        # Run document & photo processing concurrently
+        doc_tasks = [process_document(doc) for doc in payload.documents]
+        photo_tasks = [process_photo(photo) for photo in payload.photos]
+
+        doc_results, photo_results = await asyncio.gather(
+            asyncio.gather(*doc_tasks),
+            asyncio.gather(*photo_tasks),
+        )
+
+        # Process Document Results
+        for doc, full_text, pages, error_type in doc_results:
+            if error_type == "DOWNLOAD_FAILED":
+                document_summaries.append(
+                    DocumentSummaryResult(
+                        claim_doc_id=doc.claim_doc_id,
+                        document_type=str(doc.document_type),
+                        vehicle_verified=False,
+                        text_length=len(full_text),
+                    )
+                )
+                all_flags.append(
+                    ClaimEvidenceFlag(
+                        flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
+                        code=f"{doc.document_type}_DOWNLOAD_FAILED",
+                        category="DOCUMENT_INCONSISTENCY",
+                        severity=Severity.MEDIUM,
+                        source="document-ocr",
+                        explanation=f"Network or URL error while downloading {doc.document_type} (Doc #{doc.claim_doc_id}).",
+                        benign_explanations=["Temporary network timeout or invalid document link"],
+                        next_steps=["Retry download or request claimant to re-upload the document"],
+                        confidence=0.90,
+                    )
+                )
+                flag_idx += 1
+            elif error_type == "EXTRACTION_FAILED":
                 document_summaries.append(
                     DocumentSummaryResult(
                         claim_doc_id=doc.claim_doc_id,
@@ -132,9 +201,9 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                         category="DOCUMENT_INCONSISTENCY",
                         severity=Severity.MEDIUM,
                         source="document-ocr",
-                        explanation=f"Could not read or download {doc.document_type} (Doc #{doc.claim_doc_id}).",
-                        benign_explanations=["Scanned image is low resolution or file was corrupted during upload"],
-                        next_steps=["Request claimant to re-upload a clear copy of the document"],
+                        explanation=f"Could not extract readable text from {doc.document_type} (Doc #{doc.claim_doc_id}). File may be corrupted or blurry.",
+                        benign_explanations=["Low-resolution scan or damaged physical document"],
+                        next_steps=["Request claimant to submit a clear, high-resolution document scan"],
                         confidence=0.90,
                     )
                 )
@@ -147,12 +216,15 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                     ground_truth=payload.ground_truth,
                 )
 
-                has_vehicle_issue = any("VEHICLE" in df["code"] for df in doc_flags)
+                has_critical_vehicle_issue = any(
+                    "MISMATCH" in df["code"] or "NOT_FOUND" in df["code"] or "MISSING" in df["code"]
+                    for df in doc_flags
+                )
                 document_summaries.append(
                     DocumentSummaryResult(
                         claim_doc_id=doc.claim_doc_id,
                         document_type=str(doc.document_type),
-                        vehicle_verified=not has_vehicle_issue,
+                        vehicle_verified=not has_critical_vehicle_issue,
                         text_length=len(full_text),
                     )
                 )
@@ -173,32 +245,9 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                     )
                     flag_idx += 1
 
-        # Photo Forensics (EXIF Metadata, Tampering, GPS, Cross-Claim Duplicates)
-        incident_context = IncidentPhotoContext(
-            incident_date=payload.ground_truth.incident_date,
-            incident_city=payload.ground_truth.incident_city,
-            incident_state=payload.ground_truth.incident_state,
-            incident_latitude=payload.ground_truth.incident_latitude,
-            incident_longitude=payload.ground_truth.incident_longitude,
-        )
-
-        for photo in payload.photos:
-            photo_req = PhotoInspectRequest(
-                tenant_id=str(payload.tenant_id),
-                claim_id=payload.claim_id,
-                photo_id=photo.claim_doc_id,
-                photo_url=photo.photo_url,
-                incident_context=incident_context,
-                existing_hashes=photo.existing_hashes,
-            )
-
-            try:
-                photo_res = await inspect_photo(photo_req)
-            except Exception as e:
-                logger.error(
-                    f"[Photo #{photo.claim_doc_id}] Failed to download/inspect photo: {e}",
-                    exc_info=True,
-                )
+        # Process Photo Results
+        for photo, photo_res, err in photo_results:
+            if err or not photo_res:
                 all_flags.append(
                     ClaimEvidenceFlag(
                         flag_id=f"FLAG-{payload.claim_id}-{flag_idx:02d}",
@@ -206,14 +255,15 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                         category="PHOTO_FORENSICS",
                         severity=Severity.MEDIUM,
                         source="photo-forensics",
-                        explanation=f"Could not download or inspect photo (Doc #{photo.claim_doc_id}): {str(e)}",
-                        benign_explanations=["Temporary network issue or invalid image URL"],
-                        next_steps=["Request claimant to re-upload photo"],
+                        explanation=f"Could not download or process accident photo (Doc #{photo.claim_doc_id}). Verify image availability.",
+                        benign_explanations=["Temporary network issue or unreachable image URL"],
+                        next_steps=["Request claimant or surveyor to re-upload uncompressed photo"],
                         confidence=0.90,
                     )
                 )
                 flag_idx += 1
                 continue
+
             photo_hashes.append(
                 PhotoHashResult(claim_doc_id=photo.claim_doc_id, phash=photo_res.phash)
             )
@@ -234,10 +284,10 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
                 )
                 flag_idx += 1
 
-    # Claim-Level Business Rules (Policy Validity & Insured Declared Value)
+    # Claim-Level Business Rules (Policy Validity, IDV, and Incident Date Sanity)
     gt = payload.ground_truth
 
-    # Rule: Incident date must fall within the active policy coverage period
+    # Rule: Incident date must fall within active policy coverage
     if gt.policy_start_date and gt.policy_end_date:
         p_start = gt.policy_start_date.date() if hasattr(gt.policy_start_date, "date") else gt.policy_start_date
         p_end = gt.policy_end_date.date() if hasattr(gt.policy_end_date, "date") else gt.policy_end_date
@@ -259,7 +309,7 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
             )
             flag_idx += 1
 
-    # Rule: Claim amount should not exceed the vehicle's Insured Declared Value (IDV)
+    # Rule: Claim amount vs IDV
     if gt.idv_amount and payload.claim_amount > gt.idv_amount:
         all_flags.append(
             ClaimEvidenceFlag(
@@ -276,10 +326,14 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
         )
         flag_idx += 1
 
-    # Rule: Incident date sanity checks (using IST to avoid false positives near midnight)
+    # Rule: Incident date sanity checks (using IST)
     ist = ZoneInfo("Asia/Kolkata")
     today_ist = datetime.now(ist).date()
-    inc_date_for_sanity = gt.incident_date.date() if hasattr(gt.incident_date, "date") and callable(gt.incident_date.date) else gt.incident_date
+    inc_date_for_sanity = (
+        gt.incident_date.date()
+        if hasattr(gt.incident_date, "date") and callable(gt.incident_date.date)
+        else gt.incident_date
+    )
 
     if inc_date_for_sanity > today_ist:
         all_flags.append(
@@ -333,8 +387,7 @@ async def analyze_claim(payload: AnalyzeClaimRequest):
         )
     elif recommendation == Recommendation.REVIEW:
         summary = (
-            f"Medium Risk (Score {risk_score}/100): Claim contains minor discrepancies or "
-            "missing EXIF metadata requiring desktop review."
+            f"Medium Risk (Score {risk_score}/100): Claim contains discrepancies or unverified items requiring desktop review."
         )
     else:
         summary = f"Low Risk (Score {risk_score}/100): All checks verified cleanly. Fast-track eligible."

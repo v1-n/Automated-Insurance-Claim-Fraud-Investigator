@@ -2,6 +2,7 @@ import io
 import logging
 import math
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import exifread
 from fastapi import APIRouter, HTTPException
 import httpx
@@ -135,7 +136,9 @@ async def inspect_photo(payload: PhotoInspectRequest):
                 )
             )
 
-    # Normalize incident date to a timezone-naive date object
+    # Normalize incident date to a timezone-naive date object using IST
+    ist = ZoneInfo("Asia/Kolkata")
+    today_ist = datetime.now(ist).date()
     incident_val = payload.incident_context.incident_date
     if isinstance(incident_val, datetime):
         # Convert timezone-aware to naive date safely
@@ -143,9 +146,7 @@ async def inspect_photo(payload: PhotoInspectRequest):
     elif isinstance(incident_val, date):
         incident_date = incident_val
     else:
-        incident_date = date.today()
-
-    today = date.today()
+        incident_date = today_ist
 
     # 4. Check capture date vs claimed incident date (Graduated Tolerance Rules)
     if captured_at:
