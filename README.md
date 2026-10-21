@@ -79,7 +79,7 @@ graph TD
     ClaimService --> Cloudinary
     ClaimService --> Brevo
 
-    ClaimService -->|Async Analysis (X-Internal-Key)| AuthGuard
+    ClaimService -->|"Async Analysis (X-Internal-Key)"| AuthGuard
     AuthGuard --> DocOCR
     AuthGuard --> PhotoForensics
     DocOCR --> Scorer
