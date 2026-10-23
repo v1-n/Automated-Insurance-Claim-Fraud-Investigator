@@ -12,7 +12,7 @@ import com.insurancefraud.entity.User;
 import com.insurancefraud.enums.DocumentType;
 import com.insurancefraud.enums.FraudStatus;
 import com.insurancefraud.enums.PolicyStatus;
-import com.insurancefraud.fraud.AiAnalysisClient;
+import com.insurancefraud.fraud.client.AiAnalysisClient;
 import com.insurancefraud.fraud.dto.*;
 import com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo;
 import com.insurancefraud.fraud.service.FraudAnalysisService;

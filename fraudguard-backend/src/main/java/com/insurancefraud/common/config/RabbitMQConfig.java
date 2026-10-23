@@ -1,9 +1,10 @@
 package com.insurancefraud.common.config;
 
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -11,8 +12,13 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     @Bean
-    public Queue queue() {
-        return new Queue("fraud.queue", true);
+    public Queue queue1() {
+        return new Queue("fraud.queue1", true);
+    }
+
+    @Bean
+    public Queue queue2(){
+        return  new Queue("fraud.queue2", true);
     }
 
     @Bean
@@ -20,12 +26,34 @@ public class RabbitMQConfig {
         return new TopicExchange("fraud.exchange");
     }
 
+
+
     @Bean
     public Binding binding() {
         return BindingBuilder
-                .bind(queue())
+                .bind(queue1())
                 .to(exchange())
-                .with("fraud.routingkey");
+                .with("fraud.routingkey1");
+    }
+
+    @Bean
+    public Binding binding2(){
+        return BindingBuilder
+                .bind(queue2())
+                .to(exchange())
+                .with("fraud.routingkey2");
+    }
+
+    @Bean
+    public MessageConverter messageConverter(){
+        return new JacksonJsonMessageConverter();
+    }
+
+    @Bean
+    public AmqpTemplate amqpTemplate(ConnectionFactory connectionFactory){
+        RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+        rabbitTemplate.setMessageConverter(messageConverter());
+        return rabbitTemplate;
     }
 
 

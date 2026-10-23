@@ -1,4 +1,4 @@
-package com.insurancefraud.fraud;
+package com.insurancefraud.fraud.client;
 
 import com.insurancefraud.fraud.dto.AnalyzeClaimRequestDto;
 import com.insurancefraud.fraud.dto.AnalyzeClaimResponseDto;

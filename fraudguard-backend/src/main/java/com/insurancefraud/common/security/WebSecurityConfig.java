@@ -63,7 +63,7 @@ public class WebSecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
 
-                                "/learning/send-message"
+                                "/learning/**"
 
                         ).permitAll()
 

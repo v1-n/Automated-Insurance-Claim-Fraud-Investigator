@@ -15,7 +15,11 @@ public class LearningPublisher {
     }
 
     public void sendMSG(){
-        rabbitTemplate.convertAndSend("fraud.exchange", "fraud.routingkey", "Hello from LearningPublisher");
+        rabbitTemplate.convertAndSend("fraud.exchange", "fraud.routingkey1", "Hello from LearningPublisher");
         log.info("Message sent to the queue");
+    }
+
+    public void sendJsonMSG(){
+
     }
 }
