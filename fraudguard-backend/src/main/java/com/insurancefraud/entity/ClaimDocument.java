@@ -73,6 +73,9 @@ public class ClaimDocument {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "phash", length = 16)
+    private String phash;
+
     @PrePersist
     public void prePersist() {
         this.createdAt = Instant.now();

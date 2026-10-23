@@ -90,6 +90,15 @@ public class Claim {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "ai_recommendation")
+    private String aiRecommendation; // "FAST_TRACK", "REVIEW", "INVESTIGATE"
+
+    @Column(name = "ai_risk_level")
+    private String aiRiskLevel; // "LOW", "MEDIUM", "HIGH"
+
+    @Column(name = "ai_summary", columnDefinition = "TEXT")
+    private String aiSummary;
+
     @PrePersist
     public void  prePersist(){
         this.createdAt = Instant.now();

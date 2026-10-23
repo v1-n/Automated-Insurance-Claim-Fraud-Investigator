@@ -60,4 +60,6 @@ public interface ClaimRepo extends JpaRepository<Claim, Long> {
     Long countByAssignedInvestigatorAndFraudStatusNotAndIsDeletedFalse(User investigator, FraudStatus fraudStatus);
 
     Optional<Claim> findByClaimIdAndAssignedInvestigatorAndIsDeletedFalse(Long claimId, User investigator);
+
+    Optional<Claim> findByUserAndClaimIdAndTenantAndIsDeletedFalse(User user, Long claimId,Tenant tenant);
 }
