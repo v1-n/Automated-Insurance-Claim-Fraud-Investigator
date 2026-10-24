@@ -76,8 +76,8 @@ public class WebSecurityConfig {
                         // ROLE-BASED ACCESS CONTROL
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/investigator/**").hasRole("INVESTIGATOR")
-                        .requestMatchers("/api/v1/claims/**").hasRole("USER")
-                        .requestMatchers("/api/v1/policies/**").hasRole("USER")
+                        .requestMatchers("/api/v1/claims/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers("/api/v1/policies/**").hasAnyRole("USER", "ADMIN")
 
                         .anyRequest().authenticated()
                 )

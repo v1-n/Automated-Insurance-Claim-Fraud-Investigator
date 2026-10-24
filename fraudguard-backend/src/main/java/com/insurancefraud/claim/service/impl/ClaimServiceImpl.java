@@ -5,20 +5,15 @@ import com.insurancefraud.claim.dto.ClaimDetailResponseDto;
 import com.insurancefraud.claim.dto.ClaimRequestDto;
 import com.insurancefraud.claim.dto.ClaimSummaryResponseDto;
 import com.insurancefraud.claim.dto.PaginatedClaimResponse;
-import com.insurancefraud.entity.Claim;
-import com.insurancefraud.entity.Tenant;
-import com.insurancefraud.entity.User;
-import com.insurancefraud.enums.ClaimSortField;
-import com.insurancefraud.enums.ClaimStatus;
-import com.insurancefraud.enums.FraudStatus;
+import com.insurancefraud.entity.*;
+import com.insurancefraud.enums.*;
 import com.insurancefraud.common.exception.ResourceNotFoundException;
 import com.insurancefraud.claim.repository.ClaimRepo;
 import com.insurancefraud.claim.service.ClaimService;
+import com.insurancefraud.outbox.repository.OutboxEventRepo;
 import com.insurancefraud.util.PaginationUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import com.insurancefraud.entity.Policy;
-import com.insurancefraud.enums.PolicyStatus;
 import com.insurancefraud.policy.repository.PolicyRepo;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
@@ -26,6 +21,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Pageable;
+
+import java.time.Instant;
 import java.time.Year;
 import java.util.List;
 
@@ -38,12 +35,12 @@ public class ClaimServiceImpl implements ClaimService {
     private final ClaimRepo claimRepo;
     private final PolicyRepo policyRepo;
     private final ModelMapper mapper;
+    private final OutboxEventRepo outboxEventRepo;
 
 
     public String generateClaimNumber(String tenantCode, Long claimId) {
         int year = Year.now().getValue();
         return String.format("%s-%d-%05d", tenantCode, year, claimId);
-
     }
 
     @Transactional
@@ -82,8 +79,7 @@ public class ClaimServiceImpl implements ClaimService {
     // Second save - updates claimNumber
     claim = claimRepo.save(claim);
 
-    log.info("Claim created with ID: {}", claim.getClaimId());
-
+    log.info("Claim created with ID: {} and OutboxEvent queued", claim.getClaimId());
     return mapper.map(claim, ClaimSummaryResponseDto.class);
 }
           
@@ -158,5 +154,40 @@ public class ClaimServiceImpl implements ClaimService {
             dto.setPolicyEndDate(policy.getPolicyEndDate());
             dto.setPolicyStatus(policy.getPolicyStatus() != null ? policy.getPolicyStatus().name() : "ACTIVE");
         }
+    }
+
+    @Transactional
+    @Override
+    public void submitClaim(Long claimId) {
+        User user = currentUserService.getCurrentActiveUser();
+        Claim claim = claimRepo.findByUserAndClaimIdAndIsDeletedFalse(user, claimId)
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
+
+        // 1. Move claim status
+        claim.setClaimStatus(ClaimStatus.PENDING);
+        claim.setFraudStatus(FraudStatus.PENDING_ANALYSIS);
+        claimRepo.save(claim);
+
+        // 2. Build Outbox Event
+        String payloadJson = String.format(
+                "{\"claimId\": %d, \"claimNumber\": \"%s\", \"tenantId\": %d}",
+                claim.getClaimId(),
+                claim.getClaimNumber(),
+                claim.getTenant().getTenantId()
+        );
+
+        OutboxEvent outboxEvent = new OutboxEvent();
+        outboxEvent.setTenant(claim.getTenant());
+        outboxEvent.setEventType(EventType.CLAIM_SUBMITTED);
+        outboxEvent.setAggregateType(AggregateType.CLAIM);
+        outboxEvent.setAggregateId(claim.getClaimId());
+        outboxEvent.setPayload(payloadJson);
+        outboxEvent.setStatus(OutboxStatus.NEW);
+        outboxEvent.setAttempts(0);
+        outboxEvent.setNextAttemptAt(Instant.now());
+
+        outboxEventRepo.save(outboxEvent);
+
+        log.info("Claim #{} submitted! Outbox event stored for RabbitMQ.", claim.getClaimNumber());
     }
 }

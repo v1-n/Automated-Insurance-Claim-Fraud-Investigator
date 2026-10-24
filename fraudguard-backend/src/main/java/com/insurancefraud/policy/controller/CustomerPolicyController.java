@@ -27,14 +27,14 @@ public class CustomerPolicyController {
     }
 
     @PostMapping("/select")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     public ResponseEntity<PolicyResponseDto> selectAndActivatePolicy(@Valid @RequestBody CustomerSelectPolicyDto requestDto) {
         PolicyResponseDto activePolicy = customerPolicyService.selectAndActivatePolicy(requestDto);
         return new ResponseEntity<>(activePolicy, HttpStatus.CREATED);
     }
 
     @GetMapping("/my-policies")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     public ResponseEntity<List<PolicyResponseDto>> getMyPolicies() {
         List<PolicyResponseDto> myPolicies = customerPolicyService.getMyPolicies();
         return ResponseEntity.ok(myPolicies);

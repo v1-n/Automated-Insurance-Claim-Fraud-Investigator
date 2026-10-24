@@ -18,12 +18,17 @@ import java.io.IOException;
 import java.util.List;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepo userRepo;
+
+    public JwtFilter(JwtService jwtService, UserRepo userRepo) {
+        super();
+        this.jwtService = jwtService;
+        this.userRepo = userRepo;
+    }
 
 
     @Override

@@ -81,4 +81,11 @@ public class ClaimController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{claimId}/submit")
+    public ResponseEntity<ApiResponse<String>> submitClaim(@PathVariable Long claimId) {
+        claimService.submitClaim(claimId);
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Claim submitted and queued for AI analysis", 200, Instant.now(), "SUBMITTED")
+        );
+    }
 }

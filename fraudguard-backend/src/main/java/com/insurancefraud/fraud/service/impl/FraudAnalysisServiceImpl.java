@@ -41,8 +41,6 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
     @Override
     @Transactional
     public AnalyzeClaimResponseDto analyzeClaimAsync(Long claimId) {
-        User user = currentUserService.getCurrentActiveUser();
-
         // 1. Fetch Claim
         Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
                 .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));

@@ -2,47 +2,44 @@ package com.insurancefraud.common.config;
 
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RabbitMQConfig {
 
+    @Value("${rabbitmq.exchange.events}")
+    private String exchangeEvents;
+
+    @Value("${rabbitmq.queue.claim.analysis}")
+    private String queueClaimAnalysis;
+
+    @Value("${rabbitmq.routing.key.claim.analysis}")
+    private String routingKeyClaimAnalysis;
+
     @Bean
-    public Queue queue1() {
-        return new Queue("fraud.queue1", true);
+    public Queue claimAnalysisQueue(){
+        return new Queue(queueClaimAnalysis,true);
     }
 
     @Bean
-    public Queue queue2(){
-        return  new Queue("fraud.queue2", true);
+    public TopicExchange eventsExchange() {
+        return new TopicExchange(exchangeEvents,true,false);
     }
 
     @Bean
-    public TopicExchange exchange() {
-        return new TopicExchange("fraud.exchange");
-    }
-
-
-
-    @Bean
-    public Binding binding() {
+    public Binding claimAnalysisbinding() {
         return BindingBuilder
-                .bind(queue1())
-                .to(exchange())
-                .with("fraud.routingkey1");
+                .bind(claimAnalysisQueue())
+                .to(eventsExchange())
+                .with(routingKeyClaimAnalysis);
     }
 
-    @Bean
-    public Binding binding2(){
-        return BindingBuilder
-                .bind(queue2())
-                .to(exchange())
-                .with("fraud.routingkey2");
-    }
 
     @Bean
     public MessageConverter messageConverter(){
@@ -57,8 +54,10 @@ public class RabbitMQConfig {
     }
 
 
-/*
-* this 3 are created by spring automatically, so we don't need to create them manually
-* @Bean ConnectionFactory, RabbitmqTemplate,rabbitAdmin
-* */
+    @Bean
+    public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+        RabbitAdmin rabbitAdmin = new RabbitAdmin(connectionFactory);
+        rabbitAdmin.setAutoStartup(true);
+        return rabbitAdmin;
+    }
 }

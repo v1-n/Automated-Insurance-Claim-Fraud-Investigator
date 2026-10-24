@@ -13,4 +13,6 @@ public interface ClaimService {
     PaginatedClaimResponse getClaimsForCurrentUser(int pageNumber, int pageSize, ClaimSortField sortBy, String sortDir);
 
     ClaimDetailResponseDto getClaimById(Long claimId);
+
+    void submitClaim(Long claimId);
 }
