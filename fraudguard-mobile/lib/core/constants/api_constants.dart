@@ -8,13 +8,13 @@ class ApiConstants {
 
   // Physical Android phone connected to the same Wi-Fi as laptop
   static const String physicalDeviceUrl =
-      'http://10.62.215.128:8081/api/v1';
+      'http://10.190.54.128:8081/api/v1';
 
   static const String productionUrl =
       'https://fraudguard-backend-g3e4.onrender.com/api/v1';
 
-  // Default Base URL points to live Render backend
-  static String get defaultBaseUrl => productionUrl;
+  // Default Base URL points to localHostUrl (works with USB adb reverse tcp:8081 tcp:8081)
+  static String get defaultBaseUrl => localHostUrl;
 
   static Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();

@@ -20,9 +20,7 @@ class _BuyPolicyScreenState extends State<BuyPolicyScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<PolicyProvider>();
-      provider.fetchAvailablePlans();
-      provider.fetchMyPolicies();
+      context.read<PolicyProvider>().loadPolicyScreenData();
     });
   }
 

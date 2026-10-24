@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/policy_provider.dart';
@@ -53,6 +55,7 @@ class _MyPoliciesScreenState extends State<MyPoliciesScreen> {
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
                             onPressed: () {
+                                log("button Explore & Buy Policy");
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(builder: (_) => const BuyPolicyScreen()),
@@ -132,6 +135,7 @@ class _MyPoliciesScreenState extends State<MyPoliciesScreen> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
+          log("FAB buy policy");
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const BuyPolicyScreen()),

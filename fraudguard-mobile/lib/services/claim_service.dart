@@ -52,4 +52,8 @@ class ClaimService {
     });
     return ClaimModel.fromJson(response);
   }
+
+  Future<void> finalizeClaim(String claimId) async {
+    await _api.post('/claims/$claimId/submit');
+  }
 }

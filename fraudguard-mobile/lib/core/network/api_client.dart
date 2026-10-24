@@ -16,6 +16,8 @@ class ApiClient {
 
   static const String keyAccessToken = 'accessToken';
   static const String keyRefreshToken = 'refreshToken';
+  static const Duration timeoutDuration = Duration(seconds: 12);
+  static const Duration uploadTimeoutDuration = Duration(seconds: 30);
 
   Future<Map<String, String>> _getHeaders({bool isMultipart = false}) async {
     final prefs = await SharedPreferences.getInstance();
@@ -40,7 +42,7 @@ class ApiClient {
 
     dev.log('--> GET $uri', name: 'ApiClient');
     final headers = await _getHeaders();
-    var response = await http.get(uri, headers: headers);
+    var response = await http.get(uri, headers: headers).timeout(timeoutDuration);
     dev.log('<-- ${response.statusCode} GET $uri', name: 'ApiClient');
 
     if (response.statusCode == 401 && !endpoint.contains('/auth/')) {
@@ -48,7 +50,7 @@ class ApiClient {
       final refreshed = await _tryRefreshToken();
       if (refreshed) {
         final newHeaders = await _getHeaders();
-        response = await http.get(uri, headers: newHeaders);
+        response = await http.get(uri, headers: newHeaders).timeout(timeoutDuration);
         dev.log('<-- ${response.statusCode} GET (Retry) $uri', name: 'ApiClient');
       }
     }
@@ -68,7 +70,7 @@ class ApiClient {
       uri,
       headers: headers,
       body: bodyStr,
-    );
+    ).timeout(timeoutDuration);
     dev.log('<-- ${response.statusCode} POST $uri', name: 'ApiClient');
 
     if (response.statusCode == 401 && !endpoint.contains('/auth/')) {
@@ -80,7 +82,7 @@ class ApiClient {
           uri,
           headers: newHeaders,
           body: bodyStr,
-        );
+        ).timeout(timeoutDuration);
         dev.log('<-- ${response.statusCode} POST (Retry) $uri', name: 'ApiClient');
       }
     }
@@ -100,7 +102,7 @@ class ApiClient {
       uri,
       headers: headers,
       body: bodyStr,
-    );
+    ).timeout(timeoutDuration);
     dev.log('<-- ${response.statusCode} PATCH $uri', name: 'ApiClient');
 
     if (response.statusCode == 401 && !endpoint.contains('/auth/')) {
@@ -112,7 +114,7 @@ class ApiClient {
           uri,
           headers: newHeaders,
           body: bodyStr,
-        );
+        ).timeout(timeoutDuration);
         dev.log('<-- ${response.statusCode} PATCH (Retry) $uri', name: 'ApiClient');
       }
     }
@@ -126,7 +128,7 @@ class ApiClient {
     final headers = await _getHeaders();
 
     dev.log('--> DELETE $uri', name: 'ApiClient');
-    var response = await http.delete(uri, headers: headers);
+    var response = await http.delete(uri, headers: headers).timeout(timeoutDuration);
     dev.log('<-- ${response.statusCode} DELETE $uri', name: 'ApiClient');
 
     if (response.statusCode == 401 && !endpoint.contains('/auth/')) {
@@ -134,7 +136,7 @@ class ApiClient {
       final refreshed = await _tryRefreshToken();
       if (refreshed) {
         final newHeaders = await _getHeaders();
-        response = await http.delete(uri, headers: newHeaders);
+        response = await http.delete(uri, headers: newHeaders).timeout(timeoutDuration);
         dev.log('<-- ${response.statusCode} DELETE (Retry) $uri', name: 'ApiClient');
       }
     }
@@ -148,7 +150,7 @@ class ApiClient {
     final headers = await _getHeaders();
 
     dev.log('--> GET RAW $uri', name: 'ApiClient');
-    var response = await http.get(uri, headers: headers);
+    var response = await http.get(uri, headers: headers).timeout(timeoutDuration);
     dev.log('<-- ${response.statusCode} GET RAW $uri', name: 'ApiClient');
 
     if (response.statusCode == 401 && !endpoint.contains('/auth/')) {
@@ -156,7 +158,7 @@ class ApiClient {
       final refreshed = await _tryRefreshToken();
       if (refreshed) {
         final newHeaders = await _getHeaders();
-        response = await http.get(uri, headers: newHeaders);
+        response = await http.get(uri, headers: newHeaders).timeout(timeoutDuration);
         dev.log('<-- ${response.statusCode} GET RAW (Retry) $uri', name: 'ApiClient');
       }
     }
@@ -204,7 +206,7 @@ class ApiClient {
     );
     request.files.add(multipartFile);
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await request.send().timeout(uploadTimeoutDuration);
     final response = await http.Response.fromStream(streamedResponse);
     dev.log('<-- ${response.statusCode} MULTIPART $uri', name: 'ApiClient');
 
@@ -227,7 +229,7 @@ class ApiClient {
         Uri.parse('$baseUrl/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': refreshToken}),
-      );
+      ).timeout(timeoutDuration);
       dev.log('<-- ${response.statusCode} POST /auth/refresh', name: 'ApiClient');
 
       if (response.statusCode == 200) {

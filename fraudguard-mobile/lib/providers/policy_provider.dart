@@ -19,6 +19,24 @@ class PolicyProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  // Concurrently fetch available plans and customer's existing policies
+  Future<void> loadPolicyScreenData() async {
+    _setLoading(true);
+    try {
+      final results = await Future.wait([
+        _policyService.getAvailablePlans(),
+        _policyService.getMyPolicies(),
+      ]);
+      _availablePlans = results[0] as List<PolicyPlanModel>;
+      _myPolicies = results[1] as List<UserPolicyModel>;
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // Fetch plans available for customer selection
   Future<void> fetchAvailablePlans() async {
     _setLoading(true);

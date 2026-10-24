@@ -244,6 +244,9 @@ class _SubmitClaimScreenState extends State<SubmitClaimScreen> {
         );
       }
 
+      // Finalize submission & trigger Outbox Event for AI analysis
+      await _claimService.finalizeClaim(newClaim.id.toString());
+
       _showSnackBar('Claim submitted successfully!', AppTheme.successGreen);
 
       if (!mounted) return;
