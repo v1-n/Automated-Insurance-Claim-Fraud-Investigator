@@ -1,10 +1,12 @@
 package com.insurancefraud.outbox.relay;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insurancefraud.common.config.RabbitMQConfig;
 import com.insurancefraud.entity.OutboxEvent;
 import com.insurancefraud.enums.OutboxStatus;
 import com.insurancefraud.outbox.repository.OutboxEventRepo;
-import jakarta.transaction.Transactional;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -12,6 +14,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,6 +26,7 @@ import java.util.List;
 public class OutboxRelay {
     private final OutboxEventRepo outboxEventRepo;
     private final RabbitTemplate rabbitTemplate;
+    private final ObjectMapper objectMapper;
 
     private static final int MAX_ATTEMPTS = 5;
     private static final int BATCH_SIZE = 20;
@@ -31,7 +36,7 @@ public class OutboxRelay {
 
     // Runs every 2 seconds (with 1s initial delay on startup)
     @Scheduled(fixedDelay = 2000, initialDelay = 1000)
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void relayMessages(){
 
         Instant now = Instant.now();
@@ -58,10 +63,8 @@ public class OutboxRelay {
             event.setLockedUntil(now.plusSeconds(30));
             event.setStatus(OutboxStatus.PROCESSING);
 
-            rabbitTemplate.convertAndSend(
-                    exchangeEvents,
-                    routingKey,
-                    event.getPayload());
+            JsonNode payloadNode = objectMapper.readTree(event.getPayload());
+            rabbitTemplate.convertAndSend(exchangeEvents, routingKey, payloadNode);
 
             // Mark as PUBLISHED on success
             event.setStatus(OutboxStatus.PUBLISHED);
@@ -79,8 +82,8 @@ public class OutboxRelay {
             event.setLastError(errorMsg.substring(0, Math.min(errorMsg.length(), 500)));
 
             if(attempts>=MAX_ATTEMPTS){
-                event.setStatus(OutboxStatus.FAILED);
-                log.error("OutboxEvent #{} permanently FAILED after {} attempts. Error: {}",
+                event.setStatus(OutboxStatus.DEAD);
+                log.error("OutboxEvent #{} permanently DEAB after {} attempts. Error: {}",
                         event.getEventId(), attempts, errorMsg);
             }else{
                 // Exponential backoff: 3^attempts seconds (3s, 9s, 27s, 81s)

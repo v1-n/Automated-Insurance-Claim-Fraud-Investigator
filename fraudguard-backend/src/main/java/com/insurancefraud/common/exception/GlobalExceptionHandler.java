@@ -216,6 +216,11 @@
 
 
 
+        @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+        public ResponseEntity<ApiError> handleMaxUploadSize(org.springframework.web.multipart.MaxUploadSizeExceededException ex, HttpServletRequest request) {
+            return buildErrorResponse(HttpStatus.PAYLOAD_TOO_LARGE, "Payload Too Large", "Uploaded file exceeds the maximum allowed size of 25MB. Please upload a smaller document.", request);
+        }
+
         @ExceptionHandler(Exception.class)
         public ResponseEntity<ApiError> handleGlobalException(
                 Exception ex,

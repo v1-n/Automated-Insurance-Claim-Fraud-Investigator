@@ -19,6 +19,10 @@ public interface ClaimDocumentRepo extends JpaRepository<ClaimDocument,Long>  {
     List<ClaimDocument> findByClaim_ClaimIdAndTenantAndIsDeletedFalse(Long claimId, com.insurancefraud.entity.Tenant tenant);
     Optional<ClaimDocument> findByClaimDocIdAndTenantAndIsDeletedFalse(Long claimDocId, com.insurancefraud.entity.Tenant tenant);
 
-    @Query("SELECT d.phash FROM ClaimDocument d WHERE d.phash IS NOT NULL AND d.tenant.tenantId = :tenantId AND d.isDeleted = false")
-    List<String> findHistoricalPhashesByTenantId(@Param("tenantId") Long tenantId);
+    @Query("SELECT d.phash FROM ClaimDocument d WHERE d.phash IS NOT NULL AND d.tenant.tenantId = :tenantId AND d.claim.claimId != :claimId AND d.isDeleted = false")
+    List<String> findHistoricalPhashesByTenantIdExcludingClaim(
+            @Param("tenantId") Long tenantId,
+            @Param("claimId") Long claimId
+    );
+    long countByClaim_ClaimIdAndIsDeletedFalse(Long claimId);
 }

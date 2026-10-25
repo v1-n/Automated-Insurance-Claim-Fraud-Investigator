@@ -22,10 +22,34 @@ public class RabbitMQConfig {
     @Value("${rabbitmq.routing.key.claim.analysis}")
     private String routingKeyClaimAnalysis;
 
+    @Value("${rabbitmq.claim.analysis.dlx}")
+    private String deadLetterExchange;
+
     @Bean
     public Queue claimAnalysisQueue(){
-        return new Queue(queueClaimAnalysis,true);
+        return QueueBuilder
+                .durable(queueClaimAnalysis)
+                .deadLetterExchange(deadLetterExchange)
+                .build();
     }
+
+    @Bean
+    public Queue deadLetterQueue() {
+        return QueueBuilder.durable(queueClaimAnalysis + ".dlq").build();
+    }
+
+    @Bean
+    public DirectExchange deadLetterExchange() {
+        return new DirectExchange(deadLetterExchange, true, false);
+    }
+
+    @Bean
+    public Binding deadLetterBinding(){
+        return BindingBuilder.bind(deadLetterQueue())
+                .to(deadLetterExchange())
+                .with(queueClaimAnalysis + ".dlq");
+    }
+
 
     @Bean
     public TopicExchange eventsExchange() {
@@ -46,12 +70,6 @@ public class RabbitMQConfig {
         return new JacksonJsonMessageConverter();
     }
 
-    @Bean
-    public AmqpTemplate amqpTemplate(ConnectionFactory connectionFactory){
-        RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
-        rabbitTemplate.setMessageConverter(messageConverter());
-        return rabbitTemplate;
-    }
 
 
     @Bean

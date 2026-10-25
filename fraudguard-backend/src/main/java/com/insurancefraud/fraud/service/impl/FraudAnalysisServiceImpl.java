@@ -38,9 +38,20 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
     private final ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
     private final CurrentUserService currentUserService;
 
+
     @Override
-    @Transactional
     public AnalyzeClaimResponseDto analyzeClaimAsync(Long claimId) {
+        AnalyzeClaimRequestDto requestDto = buildRequestDto(claimId);
+
+        // HTTP call happens outside any DB transaction
+        AnalyzeClaimResponseDto response = aiAnalysisClient.dispatchToAi(requestDto);
+
+        // Only this quick write is transactional
+        persistResultsTransactional(claimId, response);
+        return response;
+    }
+
+    public AnalyzeClaimRequestDto buildRequestDto(Long claimId){
         // 1. Fetch Claim
         Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
                 .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
@@ -68,7 +79,7 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
 
         // 4. Fetch Claim Documents and Photos
         List<ClaimDocument> allDocs = claimDocumentRepo.findByClaim_ClaimIdAndIsDeletedFalse(claimId);
-        List<String> historicalHashes = claimDocumentRepo.findHistoricalPhashesByTenantId(claim.getTenant().getTenantId());
+        List<String> historicalHashes = claimDocumentRepo.findHistoricalPhashesByTenantIdExcludingClaim(claim.getTenant().getTenantId(), claimId);
 
         List<DocumentPayload> documents = new ArrayList<>();
         List<PhotoPayload> photos = new ArrayList<>();
@@ -90,20 +101,16 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
         requestDto.setClaimGroundTruth(groundTruth);
         requestDto.setDocuments(documents);
         requestDto.setPhotos(photos);
-
-        // 6. Call Python AI Microservice
-        log.info("Dispatching claim #{} to Python AI service with {} docs and {} photos",
-                claim.getClaimNumber(), documents.size(), photos.size());
-        AnalyzeClaimResponseDto response = aiAnalysisClient.dispatchToAi(requestDto);
-
-        // 7. Persist Results in Database
-        persistAiAnalysisResults(claim, allDocs, response);
-
-        return response;
+        return requestDto;
     }
 
-    private void persistAiAnalysisResults(Claim claim, List<ClaimDocument> allDocs, AnalyzeClaimResponseDto response) {
-        // Update Claim fraud score and status
+    @Transactional
+    public void persistResultsTransactional(Long claimId, AnalyzeClaimResponseDto response) {
+        Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
+
+        List<ClaimDocument> allDocs = claimDocumentRepo.findByClaim_ClaimIdAndIsDeletedFalse(claimId);
+
         claim.setFraudScore(BigDecimal.valueOf(response.getRisk_score()));
 
         if (response.getRisk_score() < 25) {
@@ -152,5 +159,7 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
 
         log.info("Successfully persisted AI analysis for Claim #{} (Score: {}, Recommendation: {})",
                 claim.getClaimNumber(), response.getRisk_score(), response.getRecommendation());
+
     }
+
 }

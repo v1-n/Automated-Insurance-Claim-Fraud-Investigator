@@ -58,7 +58,11 @@ class _MyPoliciesScreenState extends State<MyPoliciesScreen> {
                                 log("button Explore & Buy Policy");
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => const BuyPolicyScreen()),
+                                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) => const BuyPolicyScreen(),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
                               ).then((_) {
                                 if (context.mounted) {
                                   context.read<PolicyProvider>().fetchMyPolicies();
@@ -134,11 +138,16 @@ class _MyPoliciesScreenState extends State<MyPoliciesScreen> {
                     ),
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () {
           log("FAB buy policy");
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const BuyPolicyScreen()),
+            PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) => const BuyPolicyScreen(),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
           ).then((_) {
             if (context.mounted) {
               context.read<PolicyProvider>().fetchMyPolicies();

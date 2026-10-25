@@ -17,7 +17,7 @@ class ApiClient {
   static const String keyAccessToken = 'accessToken';
   static const String keyRefreshToken = 'refreshToken';
   static const Duration timeoutDuration = Duration(seconds: 12);
-  static const Duration uploadTimeoutDuration = Duration(seconds: 30);
+  static const Duration uploadTimeoutDuration = Duration(seconds: 90);
 
   Future<Map<String, String>> _getHeaders({bool isMultipart = false}) async {
     final prefs = await SharedPreferences.getInstance();

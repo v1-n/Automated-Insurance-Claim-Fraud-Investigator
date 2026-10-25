@@ -54,9 +54,12 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
 
   Future<void> _captureFromCamera() async {
     try {
+      // Downsample and compress to ~400KB while preserving sharp OCR & visual detail
       final XFile? photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 80,
       );
       if (photo != null) {
         setState(() {
@@ -65,6 +68,26 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
       }
     } catch (e) {
       _showSnackBar('Failed to capture photo: $e', AppTheme.dangerRed);
+    }
+  }
+
+  Future<void> _pickGalleryImages() async {
+    try {
+      // Pick multiple compressed images from gallery
+      final List<XFile> photos = await _imagePicker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 80,
+      );
+      if (photos.isNotEmpty) {
+        setState(() {
+          for (var photo in photos) {
+            _selectedFiles.add(File(photo.path));
+          }
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Failed to pick photos: $e', AppTheme.dangerRed);
     }
   }
 
@@ -77,17 +100,67 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
       );
 
       if (result != null) {
-        setState(() {
-          for (var file in result.files) {
-            if (file.path != null) {
-              _selectedFiles.add(File(file.path!));
-            }
+        for (var file in result.files) {
+          final double sizeInMb = file.size / (1024 * 1024);
+          if (file.size > 10 * 1024 * 1024) {
+            _showFileSizeAlert(file.name, sizeInMb);
+            continue;
           }
-        });
+          if (file.path != null) {
+            setState(() {
+              _selectedFiles.add(File(file.path!));
+            });
+          }
+        }
       }
     } catch (e) {
       _showSnackBar('Failed to select files: $e', AppTheme.dangerRed);
     }
+  }
+
+  void _showFileSizeAlert(String fileName, double sizeMb) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.darkSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppTheme.warningAmber, size: 28),
+            SizedBox(width: 10),
+            Text('File Limit Exceeded', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '"$fileName"',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Selected size: ${sizeMb.toStringAsFixed(1)} MB\nMaximum allowed: 10.0 MB\n\nPlease select a compressed PDF or document under 10MB.',
+              style: TextStyle(color: Colors.grey[300], fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryBlue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _removeFile(int index) {
@@ -133,19 +206,16 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
       // Upload immediately for ClaimDetailScreen
       setState(() => _isUploading = true);
       try {
-        int successCount = 0;
-        for (var doc in pickedDocs) {
-          await _documentService.uploadDocument(
-            claimId: widget.claimId!,
-            filePath: doc.filePath,
-            documentType: doc.documentType,
-          );
-          successCount++;
-        }
+        // Upload all picked documents concurrently in parallel
+        await Future.wait(pickedDocs.map((doc) => _documentService.uploadDocument(
+          claimId: widget.claimId!,
+          filePath: doc.filePath,
+          documentType: doc.documentType,
+        )));
 
         if (mounted) {
           _showSnackBar(
-            'Successfully uploaded $successCount document(s)!',
+            'Successfully uploaded ${pickedDocs.length} document(s)!',
             AppTheme.successGreen,
           );
           if (widget.onUploadSuccess != null) {
@@ -242,27 +312,41 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _isUploading ? null : _captureFromCamera,
-                  icon: Icon(Icons.camera_alt_outlined, color: isDark ? Colors.white : const Color(0xFF0F172A), size: 20),
-                  label: Text('Camera', style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                  icon: Icon(Icons.camera_alt_outlined, color: isDark ? Colors.white : const Color(0xFF0F172A), size: 18),
+                  label: Text('Camera', style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _isUploading ? null : _pickFiles,
-                  icon: Icon(Icons.upload_file_outlined, color: isDark ? Colors.white : const Color(0xFF0F172A), size: 20),
-                  label: Text('Upload File', style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                  onPressed: _isUploading ? null : _pickGalleryImages,
+                  icon: Icon(Icons.photo_library_outlined, color: isDark ? Colors.white : const Color(0xFF0F172A), size: 18),
+                  label: Text('Photos', style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isUploading ? null : _pickFiles,
+                  icon: Icon(Icons.upload_file_outlined, color: isDark ? Colors.white : const Color(0xFF0F172A), size: 18),
+                  label: Text('Files', style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),

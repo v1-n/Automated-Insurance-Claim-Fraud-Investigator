@@ -24,8 +24,13 @@ import 'screens/investigator/investigator_claims_screen.dart';
 import 'screens/investigator/investigator_dashboard_screen.dart';
 import 'theme/app_theme.dart';
 
+import 'package:google_fonts/google_fonts.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Prevent google_fonts from doing synchronous network I/O on the main thread,
+  // which can cause ANR during route transitions on debug builds.
+  GoogleFonts.config.allowRuntimeFetching = false;
   runApp(
     MultiProvider(
       providers: [

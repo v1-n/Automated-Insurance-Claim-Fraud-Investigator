@@ -1,97 +1,178 @@
-claim-intelligence-service/
-├── Dockerfile                      # Production container build with Tesseract & Python 3.12
-├── README.md                       # Microservice documentation, endpoints, and setup
-├── requirements.txt                # Production Python dependencies
-├── requirements-dev.txt            # Testing & linting tools (pytest, black, ruff)
-├── .env.example                    # Template for secrets, API keys, and thresholds
-├── .dockerignore                   # Ignores venv, pycache, local test files in Docker
-│
-├── app/
-│   ├── __init__.py
-│   ├── main.py                     # FastAPI application entrypoint, middleware, lifecycle
-│   │
-│   ├── core/                       # Core infrastructure & cross-cutting concerns
-│   │   ├── __init__.py
-│   │   ├── config.py               # Pydantic BaseSettings (env vars, model paths, thresholds)
-│   │   ├── security.py             # X-Internal-Key authentication & tenant validation
-│   │   └── logging.py              # Structured JSON logging for production observability
-│   │
-│   ├── api/                        # HTTP / REST API Layer
-│   │   ├── __init__.py
-│   │   ├── dependencies.py         # FastAPI dependency injection (auth, services)
-│   │   └── v1/
-│   │       ├── __init__.py
-│   │       ├── router.py           # Merges all v1 route controllers
-│   │       ├── endpoints/
-│   │       │   ├── health.py       # Liveness & readiness probes (/health, /metrics)
-│   │       │   ├── analyze.py      # Master full-claim analysis endpoint (/api/v1/analyze-claim)
-│   │       │   ├── documents.py    # Standalone document verification (/api/v1/verify-document)
-│   │       │   └── photos.py       # Standalone photo forensic inspection (/api/v1/inspect-photo)
-│   │
-│   ├── models/                     # Data Contracts & Pydantic Schemas
-│   │   ├── __init__.py
-│   │   ├── request_schemas.py      # ClaimAnalysisRequest, DocumentVerifyRequest
-│   │   ├── response_schemas.py     # ClaimAnalysisResponse, RiskScoreResponse
-│   │   └── evidence_flag.py        # EvidenceFlag, EvidenceItem, BoundingBox models (PRD EVD-1)
-│   │
-│   ├── services/                   # Business Logic & Core AI Engines
-│   │   ├── __init__.py
-│   │   │
-│   │   ├── document_intelligence/  # FEATURE 1: Document OCR & Field Verification
-│   │   │   ├── __init__.py
-│   │   │   ├── ocr_engine.py       # PyMuPDF (digital PDF) + Tesseract/PaddleOCR (scans)
-│   │   │   ├── preprocessor.py     # OpenCV deskewing, noise reduction, thresholding
-│   │   │   ├── fir_extractor.py    # FIR field extraction + IPC vs. BNS legal code validator
-│   │   │   └── invoice_extractor.py# Garage bill extraction + GSTIN Luhn checksum validator
-│   │   │
-│   │   ├── photo_forensics/        # FEATURE 2: Accident Image Analysis
-│   │   │   ├── __init__.py
-│   │   │   ├── phash_engine.py     # 64-bit Perceptual Hashing (pHash/dHash) for duplicates
-│   │   │   └── exif_inspector.py   # DateTime, GPS, and photo editing software tag scanner
-│   │   │
-│   │   ├── ml_scoring/             # FEATURE 3: Machine Learning Risk Classifier
-│   │   │   ├── __init__.py
-│   │   │   ├── model_loader.py     # Lazy model loading and lifecycle management
-│   │   │   ├── feature_builder.py  # Constructs normalized 7+ dimensional feature vector
-│   │   │   ├── predictor.py        # XGBoost / Random Forest inference
-│   │   │   └── explainer.py        # SHAP TreeExplainer for top risk factor attribution
-│   │   │
-│   │   ├── rule_engine/            # Deterministic IRDAI Insurance Business Rules
-│   │   │   ├── __init__.py
-│   │   │   ├── rules.py            # Constructive Total Loss (>75% IDV), Staged Accident (<14 days)
-│   │   │   └── evaluator.py        # Computes deterministic rule score & creates flags
-│   │   │
-│   │   ├── cross_claim/            # FEATURE 4: Multi-Claim & Fraud Ring Intelligence
-│   │   │   ├── __init__.py
-│   │   │   ├── hash_matcher.py     # Matches image hashes against historic database
-│   │   │   └── cluster_analyzer.py # Detects repeated vehicle/garage collusion patterns
-│   │   │
-│   │   └── copilot/                # FEATURE 5: AI Investigation Brief Synthesizer
-│   │       ├── __init__.py
-│   │       ├── prompt_templates.py # Guardrailed prompts (advisory only, no accusations)
-│   │       └── brief_generator.py  # Synthesizes OCR + Rules + ML + Forensics into memo
-│   │
-│   └── trained_artifacts/          # Versioned Serialized ML Models (gitignored if large)
-│       ├── .gitkeep
-│       ├── fraud_xgboost_v1.0.joblib
-│       └── scaler_v1.0.joblib
-│
-├── training/                       # Offline Model Training & Evaluation Harness
-│   ├── train.py                    # Training pipeline with Stratified K-Fold CV & class weights
-│   ├── evaluate.py                 # Precision, Recall, PR-AUC, F1 metrics & confusion matrix
-│   └── data/                       # Dataset directory (Kaggle dataset & synthetic data generator)
-│       └── .gitkeep
-│
-└── tests/                          # Automated Test Suite
-    ├── conftest.py                 # Pytest fixtures and mock requests
-    ├── test_api/                   # API endpoint tests (health, analyze-claim)
-    │   └── test_analyze_routes.py
-    ├── test_services/              # Unit tests for specific AI modules
-    │   ├── test_gstin_checksum.py  # Tests Luhn mod 36 validator
-    │   ├── test_bns_validator.py   # Tests 1 July 2024 IPC vs BNS date cut-off
-    │   ├── test_phash.py           # Tests duplicate image distance calculation
-    │   └── test_ml_scoring.py      # Tests inference and SHAP output
-    └── sample_fixtures/            # Redacted sample test PDFs and images
-        ├── sample_fir.pdf
-        ├── sample_invoice.png
-        └── damaged_car.jpg
+For your FraudGuard — Automated Insurance Claim Fraud Investigator, computer vision could be one of the most valuable additions because your users submit accident photos, vehicle-damage evidence, and repair documents.
+1. What can computer vision do in your project?
+
+
+
+
+
+
+
+
+
+1. Vehicle damage detection
+
+Identify damaged areas such as bumpers, headlights, doors, windshields, and body panels.
+
+Example: Detect damage around the front bumper and draw a bounding box around it.
+
+
+
+
+
+
+
+
+
+
+
+
+2. Damage severity estimation
+
+Classify visible damage as minor, moderate, or severe using a trained model.
+
+Example: A small scratch may be minor; a heavily crushed panel may be severe. Estimates require validation against real inspection data.
+
+
+
+
+
+
+
+
+
+
+
+
+3. Duplicate and reused accident-photo detection
+
+Compare newly uploaded images with historical claim photos to find identical or visually similar images.
+
+Example: A photo submitted for a new claim closely matches a photo attached to a previous claim.
+
+
+
+
+
+
+
+
+
+
+
+
+4. Cross-photo consistency checking
+
+Check whether photos submitted for the same claim appear consistent in vehicle appearance, damage location, and visible details.
+
+Example: One image shows front-left damage while another appears to show unrelated damage. Flag for review, not automatic rejection.
+
+
+
+
+
+
+
+
+
+
+
+
+5. Image manipulation analysis
+
+Detect potential editing or inconsistencies using image-forensics techniques and, where appropriate, trained models.
+
+Example: Identify suspicious image regions or inconsistencies. No detector can reliably prove fraud from a single signal alone.
+
+
+
+2. Which computer-vision features should you implement first?
+For FraudGuard, I recommend this order:
+
+Phase 1 — Damage detection
+Recommended first
+
+Detect damage regions and identify affected vehicle parts. Return annotated images with bounding boxes and confidence scores.
+
+Tools: Python, OpenCV, Ultralytics YOLO, a damage-labeled dataset.
+
+
+
+
+Phase 2 — Historical image matching
+
+You already calculate perceptual hashes (pHash). Build on that by storing hashes for previous claims, comparing new submissions, and showing investigators the matching images and claim references.
+
+Tools: ImageHash, OpenCV, image embeddings for more advanced similarity.
+
+
+
+
+Phase 3 — Damage severity classification
+
+Predict minor, moderate, or severe visible damage. Train and validate it using appropriately labeled images.
+
+Tools: PyTorch or transfer learning with a pretrained image-classification model.
+
+
+
+
+Phase 4 — Claim evidence consistency
+
+Compare multiple photos and combine visual findings with your existing EXIF date checks, document verification, and claim information.
+
+
+
+3. How it fits into your current architecture
+You already have a FastAPI-based fraudguard-ai-service with a photo-inspection endpoint. You can extend it instead of creating another independent AI service.
+Accident photo uploaded
+
+Flutter app → Spring Boot backend
+
+FastAPI photo inspection
+
+Validate and preprocess the image
+
+Damage detection
+
+YOLO / CV model
+
+
+EXIF verification
+
+Your existing logic
+
+
+Duplicate matching
+
+pHash + history
+
+
+Document checks
+
+Your existing logic
+
+
+
+Combined evidence report
+
+Visual findings, confidence, flags, explanations and investigator review
+
+
+4. What the investigator could see in the UI
+For each uploaded accident photo, show:
+- Original photo and annotated photo side by side.
+- Detected vehicle part and damage region.
+- Model confidence, such as 0.91 (91% model confidence, not 91% probability of fraud).
+- Estimated damage severity, if the model supports it.
+- EXIF date and any date discrepancy.
+- Similar historical photos and their associated claim references.
+- An evidence summary with review flags and suggested next steps.
+Do not turn a damage detection score directly into a fraud score. A genuine accident can have severe damage, and a fraudulent claim can contain a real photograph.
+5. Important: choosing a model
+A pretrained YOLO model can detect vehicles and other general objects, but it won't automatically recognize every type of vehicle damage. For damage detection, you need a model trained or fine-tuned on images labeled for scratches, dents, cracks, broken lights, and other damage classes. Damage severity also needs its own suitable labels and validation.
+
+My recommendation: start with damage-region detection, retain your existing pHash duplicate matching, and integrate both into your current photo-inspection pipeline. That provides a useful computer-vision feature without needing to rebuild your entire backend.
+
+
+
+feature Car Damage Detection & Cost Estimation

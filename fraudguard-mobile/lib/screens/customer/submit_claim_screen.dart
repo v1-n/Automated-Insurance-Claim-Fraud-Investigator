@@ -235,14 +235,12 @@ class _SubmitClaimScreenState extends State<SubmitClaimScreen> {
         incidentState: _stateController.text.trim(),
       );
 
-      // Upload all attached evidence documents
-      for (var doc in _attachedDocuments) {
-        await _documentService.uploadDocument(
-          claimId: newClaim.id,
-          filePath: doc.filePath,
-          documentType: doc.documentType,
-        );
-      }
+      // Upload all attached evidence documents in parallel to slash total upload time
+      await Future.wait(_attachedDocuments.map((doc) => _documentService.uploadDocument(
+        claimId: newClaim.id,
+        filePath: doc.filePath,
+        documentType: doc.documentType,
+      )));
 
       // Finalize submission & trigger Outbox Event for AI analysis
       await _claimService.finalizeClaim(newClaim.id.toString());

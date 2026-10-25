@@ -62,7 +62,6 @@ class _BuyPolicyScreenState extends State<BuyPolicyScreen> {
     final plans = policyProvider.availablePlans;
     final myPolicies = policyProvider.myPolicies;
 
-    // Build set of already-purchased plan names to prevent re-buying
     final purchasedPlanNames = myPolicies
         .where((p) => p.policyStatus == 'ACTIVE')
         .map((p) => p.planName)

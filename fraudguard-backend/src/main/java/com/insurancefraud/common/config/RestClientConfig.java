@@ -11,7 +11,7 @@ import java.time.Duration;
 @Configuration
 public class RestClientConfig {
 
-    @Value("${ai.fraud.service.ai-base-url:http://localhost:8000/api/v1/analyze-claim}")
+    @Value("${ai.fraud.service.url:http://localhost:8000/api/v1/analyze-claim}")
     private String baseUrl;
 
     @Value("${ai.fraud.service.connect-timeout:3s}")

@@ -162,9 +162,9 @@ public class ClaimDocumentServiceImpl implements ClaimDocumentService {
             throw new InvalidMimeTypeException("Unsupported file type");
         }
 
-        long maxFileSize = 10 * 1024 * 1024;
+        long maxFileSize = 10 * 1024 * 1024; // 10MB
         if (file.getSize() > maxFileSize) {
-            throw new InvalidFileException("File size exceeds 10MB");
+            throw new InvalidFileException("File size exceeds 10MB limit. Please upload a file smaller than 10MB.");
         }
     }
 

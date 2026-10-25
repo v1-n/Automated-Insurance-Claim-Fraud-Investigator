@@ -99,6 +99,9 @@ public class Claim {
     @Column(name = "ai_summary", columnDefinition = "TEXT")
     private String aiSummary;
 
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
     @PrePersist
     public void  prePersist(){
         this.createdAt = Instant.now();
