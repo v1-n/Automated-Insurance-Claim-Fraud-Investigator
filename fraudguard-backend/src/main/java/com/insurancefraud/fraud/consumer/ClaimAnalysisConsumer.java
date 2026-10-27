@@ -2,6 +2,7 @@ package com.insurancefraud.fraud.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.insurancefraud.enums.AnalysisRunStatus;
 import com.insurancefraud.fraud.repository.ClaimAnalysisRunRepo;
 import com.insurancefraud.fraud.service.FraudAnalysisService;
 import lombok.RequiredArgsConstructor;
@@ -26,20 +27,19 @@ public class ClaimAnalysisConsumer {
         String payloadStr = "";
         try {
             payloadStr = new String(message.getBody(), StandardCharsets.UTF_8);
-            log.info("Received claim analysis job from RabbitMQ: {}", payloadStr);
-
-            JsonNode payload = objectMapper.readTree(payloadStr);
+                JsonNode payload = objectMapper.readTree(payloadStr);
             JsonNode claimIdNode = payload.get("claimId");
 
             if (claimIdNode == null
                     || claimIdNode.isNull()
                     || !claimIdNode.canConvertToLong()) {
                 throw new IllegalArgumentException(
-                        "Missing or invalid claimId in message: " + payloadStr
+                        "Missing or invalid claimId in message"
                 );
             }
 
             Long claimId = claimIdNode.longValue();
+            log.info("Received claim analysis job from RabbitMQ for Claim ID: {}", claimId);
 
             // Extract eventId from header or JSON envelope
             Long eventId = null;
@@ -50,9 +50,10 @@ public class ClaimAnalysisConsumer {
                 eventId = payload.get("eventId").asLong();
             }
 
-            // Deduplication Guard: If this exact outbox event was already processed, skip duplicate
-            if (eventId != null && claimAnalysisRunRepo.existsByOutboxEventId(eventId)) {
-                log.info("OutboxEvent #{} for Claim ID {} was already analyzed. Skipping duplicate job.",
+            // Deduplication Guard: Skip ONLY if a run for this outbox event was already COMPLETED!
+            // If the previous attempt FAILED, allow Spring AMQP retry to execute again.
+            if (eventId != null && claimAnalysisRunRepo.existsByOutboxEventIdAndStatus(eventId, AnalysisRunStatus.COMPLETED)) {
+                log.info("OutboxEvent #{} for Claim ID {} was already completed. Skipping duplicate job.",
                         eventId, claimId);
                 return;
             }
@@ -67,7 +68,7 @@ public class ClaimAnalysisConsumer {
             log.info("AI Analysis completed successfully for Claim ID: {}", claimId);
 
         } catch (Exception ex) {
-            log.error("Failed to process claim analysis job: {}. Error: {}", payloadStr, ex.getMessage(), ex);
+            log.error("Failed to process claim analysis job for message. Error: {}", ex.getMessage(), ex);
             throw new RuntimeException(ex);
         }
     }

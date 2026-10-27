@@ -6,6 +6,7 @@ import com.insurancefraud.document.repository.ClaimDocumentRepo;
 import com.insurancefraud.entity.Claim;
 import com.insurancefraud.entity.ClaimDocument;
 import com.insurancefraud.entity.ClaimEvidenceFlag;
+import com.insurancefraud.enums.AiStatus;
 import com.insurancefraud.fraud.dto.AnalyzeClaimResponseDto;
 import com.insurancefraud.fraud.dto.PhotoHashResultDto;
 import com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @Slf4j
@@ -33,11 +35,13 @@ public class AnalysisResultWriter {
 
         List<ClaimDocument> allDocs = claimDocumentRepo.findByClaim_ClaimIdAndIsDeletedFalse(claimId);
 
-        // Update Claim fraud score and AI advisory fields (AI is advisory: fraudStatus is reserved for investigator decision)
+        // Update Claim fraud score, aiStatus and AI advisory fields (AI is advisory: fraudStatus is reserved for investigator decision)
         claim.setFraudScore(BigDecimal.valueOf(response.getRisk_score()));
         claim.setAiRecommendation(response.getRecommendation());
         claim.setAiRiskLevel(response.getRisk_level() != null ? response.getRisk_level().name() : null);
         claim.setAiSummary(response.getSummary());
+        claim.setAiStatus(AiStatus.DONE);
+        claim.setAiAnalyzedAt(Instant.now());
         claimRepo.save(claim);
 
         // Save computed pHashes back to ClaimDocuments
@@ -53,7 +57,7 @@ public class AnalysisResultWriter {
             }
         }
 
-        // Save evidence flags
+        // Save evidence flags with benign explanations and next steps
         claimEvidenceFlagRepo.deleteByClaim_ClaimId(claim.getClaimId());
         if (response.getFlags() != null) {
             List<ClaimEvidenceFlag> flagEntities = response.getFlags().stream().map(f -> {
@@ -65,13 +69,15 @@ public class AnalysisResultWriter {
                 entity.setSeverity(f.getSeverity());
                 entity.setSource(f.getSource());
                 entity.setExplanation(f.getExplanation());
+                entity.setBenignExplanations(f.getBenignExplanations());
+                entity.setNextSteps(f.getNextSteps());
                 entity.setConfidence(f.getConfidence());
                 return entity;
             }).toList();
             claimEvidenceFlagRepo.saveAll(flagEntities);
         }
 
-        log.info("Successfully persisted AI analysis for Claim #{} (Score: {}, Recommendation: {})",
+        log.info("Successfully persisted AI analysis for Claim #{} (Score: {}, Recommendation: {}, Status: DONE)",
                 claim.getClaimNumber(), response.getRisk_score(), response.getRecommendation());
     }
 }

@@ -1,6 +1,5 @@
 package com.insurancefraud.admin.dto;
 
-import com.insurancefraud.claim.dto.ClaimSummaryResponseDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -12,7 +11,7 @@ import java.util.List;
 @NoArgsConstructor
 public class PaginatedAdminClaimResponseDto {
 
-    private List<ClaimSummaryResponseDto> content;
+    private List<AdminClaimSummaryResponseDto> content;
 
     private long totalElements;
     private int totalPages;
@@ -24,5 +23,4 @@ public class PaginatedAdminClaimResponseDto {
     private String sortBy;
     private Long nextPage;
     private Long previousPage;
-
 }

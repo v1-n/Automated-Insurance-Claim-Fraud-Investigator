@@ -23,6 +23,10 @@ import com.insurancefraud.enums.PolicyStatus;
 import com.insurancefraud.policy.repository.PolicyRepo;
 import com.insurancefraud.enums.EventType;
 import com.insurancefraud.outbox.service.OutboxService;
+import com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo;
+import com.insurancefraud.entity.ClaimEvidenceFlag;
+import com.insurancefraud.fraud.dto.AiAnalysisDto;
+import com.insurancefraud.fraud.dto.AiFlagDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -37,13 +41,15 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
     private final ClaimDocumentRepo claimDocumentRepo;
     private final PolicyRepo policyRepo;
     private final OutboxService outboxService;
+    private final ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
 
-    public InvestigatorClaimServiceImpl(CurrentUserService currentUserService, ClaimRepo claimRepo, ClaimDocumentRepo claimDocumentRepo, PolicyRepo policyRepo, OutboxService outboxService) {
+    public InvestigatorClaimServiceImpl(CurrentUserService currentUserService, ClaimRepo claimRepo, ClaimDocumentRepo claimDocumentRepo, PolicyRepo policyRepo, OutboxService outboxService, ClaimEvidenceFlagRepo claimEvidenceFlagRepo) {
         this.currentUserService = currentUserService;
         this.claimRepo = claimRepo;
         this.claimDocumentRepo = claimDocumentRepo;
         this.policyRepo = policyRepo;
         this.outboxService = outboxService;
+        this.claimEvidenceFlagRepo = claimEvidenceFlagRepo;
     }
 
 
@@ -78,6 +84,8 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
                                         claim.getClaimAmount(),
                                         claim.getClaimStatus(),
                                         claim.getFraudStatus(),
+                                        claim.getFraudScore(),
+                                        claim.getAiRiskLevel(),
                                         claim.getCreatedAt(),
                                         claim.getIncidentDate(),
                                         claim.getIncidentCity(),
@@ -156,6 +164,36 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
         dto.setClaimAmount(claim.getClaimAmount());
         dto.setClaimStatus(claim.getClaimStatus());
         dto.setFraudStatus(claim.getFraudStatus());
+        dto.setFraudScore(claim.getFraudScore());
+
+        String aiStatusStr = claim.getAiStatus() != null ? claim.getAiStatus().name() : (claim.getFraudScore() != null ? "DONE" : "PENDING");
+        dto.setAiStatus(aiStatusStr);
+        dto.setAiRiskLevel(claim.getAiRiskLevel());
+        dto.setAiRecommendation(claim.getAiRecommendation());
+        dto.setAiSummary(claim.getAiSummary());
+
+        List<ClaimEvidenceFlag> flags = claimEvidenceFlagRepo.findByClaim_ClaimId(claimId);
+        List<AiFlagDto> flagDtos = flags.stream().map(f -> new AiFlagDto(
+                f.getCode(),
+                f.getCategory(),
+                f.getSeverity() != null ? f.getSeverity().name() : "LOW",
+                f.getExplanation(),
+                f.getBenignExplanations(),
+                f.getNextSteps(),
+                f.getConfidence()
+        )).toList();
+
+        AiAnalysisDto aiAnalysis = new AiAnalysisDto(
+                aiStatusStr,
+                claim.getFraudScore(),
+                claim.getAiRiskLevel(),
+                claim.getAiRecommendation(),
+                claim.getAiSummary(),
+                claim.getAiAnalyzedAt(),
+                flagDtos
+        );
+        dto.setAiAnalysis(aiAnalysis);
+
         dto.setIncidentDate(claim.getIncidentDate());
         dto.setIncidentCity(claim.getIncidentCity());
         dto.setIncidentState(claim.getIncidentState());
@@ -207,15 +245,7 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
         claim.setFraudStatus(requestDto.getFraudStatus());
         claimRepo.save(claim);
 
-        outboxService.record(
-                EventType.REVIEW_SUBMITTED,
-                claim,
-                Map.of(
-                        "fraudStatus", claim.getFraudStatus().name(),
-                        "reviewNotes", claim.getReviewNotes() != null ? claim.getReviewNotes() : ""
-                ),
-                investigator.getUserId()
-        );
+        outboxService.record(EventType.REVIEW_SUBMITTED, claim);
 
         log.info(
                 "Investigator {} reviewed claim {}",

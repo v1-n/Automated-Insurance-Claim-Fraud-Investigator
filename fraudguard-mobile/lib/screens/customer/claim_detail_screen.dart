@@ -672,12 +672,15 @@ class ClaimStepper extends StatelessWidget {
     const step1Subtitle = 'Your claim has been successfully submitted.';
 
     // Step 2: Investigation
-    final bool isInvestigationCompleted = (claim.fraudStatus != null && claim.fraudStatus != 'PENDING_ANALYSIS') || isDecided;
-    final StepState step2State = isInvestigationCompleted ? StepState.completed : StepState.active;
+    final bool isInvestigationCompleted = isDecided || (claim.reviewNotes != null && claim.reviewNotes!.isNotEmpty);
+    final bool isUnderInvestigation = claim.status == 'UNDER_REVIEW' || isInvestigationCompleted;
+    final StepState step2State = isInvestigationCompleted
+        ? StepState.completed
+        : (isUnderInvestigation ? StepState.active : StepState.pending);
     final String step2Title = isInvestigationCompleted ? 'Investigation Completed' : 'Under Investigation';
     final String step2Subtitle = isInvestigationCompleted
         ? 'Your claim has completed the investigation stage.'
-        : 'Our investigation team is reviewing your claim.';
+        : (isUnderInvestigation ? 'Our investigation team is reviewing your claim.' : 'Investigation will begin shortly.');
 
     // Step 3: Final Review
     final bool isFinalReviewCompleted = isDecided;

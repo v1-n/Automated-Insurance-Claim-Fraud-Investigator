@@ -406,7 +406,30 @@
 
 ---
 
+### Q30: What is the 'Consumer Deduplication Trap' in Message Retries, and how do you design a Resilient DLQ & AI State Machine?
+* **Interviewer Angle**: Message deduplication pitfalls, transient failure recovery, Dead Letter Queue (DLQ) consumers, payload sanitization, and customer data isolation.
+* **Elevator Pitch**:
+  > *"When building idempotent message consumers with deduplication tables (e.g., `ClaimAnalysisRun`), developers commonly fall into the **Premature Deduplication Trap**:*
+  > 
+  > *1. **The Deduplication Trap**:*
+  > *   If a consumer checks `existsByOutboxEventId(eventId)` before execution, and immediately inserts a row with `status = STARTED` before calling an external AI service:*
+  > *   If the AI service temporarily times out (e.g. 504 Gateway Timeout), Spring AMQP rejects the message and retries with exponential backoff.*
+  > *   On retry attempt #2, `existsByOutboxEventId(eventId)` returns `TRUE`! The consumer erroneously concludes the work is already done, ACKs the message, and drops it. The claim remains stuck forever without analysis.*
+  > *   **The Fix**: Deduplication must check for **completion** (`existsByOutboxEventIdAndStatus(eventId, COMPLETED)`). Furthermore, on retry, the service must find and update the existing `STARTED/FAILED` run row rather than attempting to insert a new version that triggers a database unique constraint violation on `(claim_id, run_version)`.*
+  > 
+  > *2. **The DLQ Dead-End & AI Status State Machine**:*
+  > *   If an AI service is permanently unreachable or a document is corrupted, Spring AMQP retries eventually exhaust (e.g., 3 attempts) and routes the message to a Dead Letter Queue (`fraudguard.claim.analysis.dlq`).*
+  > *   Without a DLQ listener, the database state remains `ai_status = RUNNING`, and the mobile/web UI indefinitely displays 'AI Analysis In Progress...'.*
+  > *   **The Fix**: Implement a dedicated `ClaimAnalysisDlqConsumer` listening on `${rabbitmq.queue.claim.analysis}.dlq`. When a dead-lettered message arrives, it marks `claim.setAiStatus(AiStatus.FAILED)` and records an audit log. The UI immediately renders 'AI Analysis Unavailable' and provides the Admin a one-click 'Re-run AI Analysis' button.*
+  > 
+  > *3. **Outbox Payload Sanitization & Customer Isolation**:*
+  > *   **PII & Audit Leakage**: Never serialize user emails, names, investigator decision notes, or internal review comments into event payloads or application log lines. Event payloads should only carry domain identifiers (`claimId`, `tenantCode`) and immutable event metadata.*
+  > *   **Customer Fraud Signal Secrecy**: Insurance fraud models (`fraudScore`, `fraudStatus`, and evidence flags like `EXIF_DATETIME_MISMATCH`) must NEVER be returned in customer-facing APIs (`ClaimDetailResponseDto`). Decouple customer and admin DTOs so customers track progress via standard operational states (`status == 'UNDER_REVIEW'`) without knowing they are being evaluated by anti-fraud algorithms."*
+
+---
+
 *(This document is actively maintained as new architectural components are implemented in FraudGuard.)*
+
 
 
 

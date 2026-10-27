@@ -3,6 +3,7 @@ package com.insurancefraud.investigator.dto;
 import com.insurancefraud.enums.ClaimStatus;
 import com.insurancefraud.enums.ClaimType;
 import com.insurancefraud.enums.FraudStatus;
+import com.insurancefraud.fraud.dto.AiAnalysisDto;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,7 +17,6 @@ import java.util.List;
 @Data
 public class InvestigatorClaimDetailsResponseDto {
 
-
     private boolean reviewAllowed;
     private String reviewNotes;
 
@@ -27,12 +27,21 @@ public class InvestigatorClaimDetailsResponseDto {
     private BigDecimal claimAmount;
     private ClaimStatus claimStatus;
     private FraudStatus fraudStatus;
+    private BigDecimal fraudScore;
+
+    // AI Analysis Details
+    private String aiStatus;
+    private String aiRiskLevel;
+    private String aiRecommendation;
+    private String aiSummary;
+    private AiAnalysisDto aiAnalysis;
 
     private Instant incidentDate;
     private String incidentCity;
     private String incidentState;
     private String description;
     private Instant updatedAt;
+
     // Customer Info
     private Long customerId;
     private String customerName;

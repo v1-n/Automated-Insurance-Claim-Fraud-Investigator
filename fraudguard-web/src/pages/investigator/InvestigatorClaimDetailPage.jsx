@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "../../components/DashboardLayout";
 import { getClaimDetails, reviewClaim, viewDocument } from "../../services/investigatorService";
 import { getUser } from "../../utils/auth";
+import AiRiskCard from "../../components/AiRiskCard";
 import {
   ArrowLeft, FileText, MapPin, Loader2, AlertTriangle,
   CheckCircle2, ShieldAlert, Paperclip, UserCircle, X, Eye
@@ -185,6 +186,9 @@ export default function InvestigatorClaimDetailPage() {
 
           {/* Left Column (Information & Docs) */}
           <div className={showRightPanel ? "lg:col-span-2 space-y-6" : "space-y-6"}>
+
+            {/* AI Fraud Analysis */}
+            <AiRiskCard claim={claim} />
 
             {/* Claim Information */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

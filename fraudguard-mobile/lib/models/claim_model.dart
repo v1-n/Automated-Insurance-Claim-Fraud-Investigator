@@ -1,5 +1,79 @@
 import 'document_model.dart';
 
+class AiFlag {
+  final String code;
+  final String category;
+  final String severity; // HIGH, MEDIUM, LOW
+  final String explanation;
+  final List<String> benignExplanations;
+  final List<String> nextSteps;
+  final double? confidence;
+
+  AiFlag({
+    required this.code,
+    required this.category,
+    required this.severity,
+    required this.explanation,
+    this.benignExplanations = const [],
+    this.nextSteps = const [],
+    this.confidence,
+  });
+
+  factory AiFlag.fromJson(Map<String, dynamic> json) {
+    return AiFlag(
+      code: json['code']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      severity: json['severity']?.toString() ?? 'LOW',
+      explanation: json['explanation']?.toString() ?? '',
+      benignExplanations: (json['benignExplanations'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      nextSteps: (json['nextSteps'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      confidence: (json['confidence'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class AiAnalysis {
+  final String status;
+  final double? riskScore;
+  final String? riskLevel;
+  final String? recommendation;
+  final String? summary;
+  final String? analyzedAt;
+  final List<AiFlag> flags;
+
+  AiAnalysis({
+    required this.status,
+    this.riskScore,
+    this.riskLevel,
+    this.recommendation,
+    this.summary,
+    this.analyzedAt,
+    this.flags = const [],
+  });
+
+  factory AiAnalysis.fromJson(Map<String, dynamic> json) {
+    return AiAnalysis(
+      status: json['status']?.toString() ?? 'PENDING',
+      riskScore: (json['riskScore'] as num?)?.toDouble(),
+      riskLevel: json['riskLevel']?.toString(),
+      recommendation: json['recommendation']?.toString(),
+      summary: json['summary']?.toString(),
+      analyzedAt: json['analyzedAt']?.toString(),
+      flags: json['flags'] != null
+          ? (json['flags'] as List<dynamic>)
+              .map((f) => AiFlag.fromJson(f as Map<String, dynamic>))
+              .toList()
+          : const [],
+    );
+  }
+}
+
 class ClaimModel {
   final String id;
   final String? claimNumber;
@@ -25,6 +99,13 @@ class ClaimModel {
   final String? reviewNotes;
   final String? decisionNotes;
   final List<DocumentModel> documents;
+
+  // AI Analysis Details
+  final String? aiStatus;
+  final String? aiRiskLevel;
+  final String? aiRecommendation;
+  final String? aiSummary;
+  final AiAnalysis? aiAnalysis;
 
   // Policy Details
   final String? planName;
@@ -62,6 +143,11 @@ class ClaimModel {
     this.reviewNotes,
     this.decisionNotes,
     this.documents = const [],
+    this.aiStatus,
+    this.aiRiskLevel,
+    this.aiRecommendation,
+    this.aiSummary,
+    this.aiAnalysis,
     this.planName,
     this.vehicleNumber,
     this.vehicleMakeModel,
@@ -91,15 +177,44 @@ class ClaimModel {
   bool get isCompletedInvestigation => !isPendingInvestigation;
 
   factory ClaimModel.fromJson(Map<String, dynamic> json) {
+    final rawAiAnalysis = json['aiAnalysis'];
+    final parsedAiAnalysis = rawAiAnalysis != null
+        ? AiAnalysis.fromJson(rawAiAnalysis as Map<String, dynamic>)
+        : null;
+
+    final parsedAiStatus = json['aiStatus']?.toString() ??
+        parsedAiAnalysis?.status ??
+        (json['fraudScore'] != null ? 'DONE' : null);
+
+    final parsedAiRiskLevel = json['aiRiskLevel']?.toString() ??
+        parsedAiAnalysis?.riskLevel ??
+        json['riskLevel']?.toString() ??
+        json['fraudRiskLevel']?.toString();
+
+    final parsedAiRecommendation = json['aiRecommendation']?.toString() ??
+        parsedAiAnalysis?.recommendation;
+
+    final parsedAiSummary = json['aiSummary']?.toString() ??
+        parsedAiAnalysis?.summary;
+
+    final parsedScore = (json['fraudScore'] as num?)?.toDouble() ??
+        parsedAiAnalysis?.riskScore ??
+        0.0;
+
     return ClaimModel(
       id: (json['claimId'] ?? json['id'])?.toString() ?? '',
       claimNumber: json['claimNumber'] ?? json['claimId']?.toString(),
       policyNumber: json['policyNumber'] ?? json['policy']?['policyNumber'] ?? 'POL-N/A',
       claimAmount: (json['claimAmount'] as num?)?.toDouble() ?? 0.0,
       status: json['claimStatus'] ?? json['status'] ?? 'PENDING',
-      fraudScore: (json['fraudScore'] as num?)?.toDouble() ?? 0.0,
+      fraudScore: parsedScore,
       fraudStatus: json['fraudStatus'],
-      riskLevel: json['riskLevel'] ?? json['fraudRiskLevel'] ?? 'LOW',
+      riskLevel: parsedAiRiskLevel ?? 'LOW',
+      aiStatus: parsedAiStatus,
+      aiRiskLevel: parsedAiRiskLevel,
+      aiRecommendation: parsedAiRecommendation,
+      aiSummary: parsedAiSummary,
+      aiAnalysis: parsedAiAnalysis,
       incidentDate: json['incidentDate']?.toString(),
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),

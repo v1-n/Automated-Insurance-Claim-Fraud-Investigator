@@ -1,7 +1,6 @@
 package com.insurancefraud.admin.service;
 
 import com.insurancefraud.admin.dto.*;
-import com.insurancefraud.claim.dto.ClaimSummaryResponseDto;
 import com.insurancefraud.enums.ClaimSortField;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -18,7 +17,8 @@ public interface AdminClaimService {
     ClaimDecisionResponseDto rejectClaim(Long claimId, @Valid ClaimDecisionRequestDto requestDto);
 
     DashboardResponseDto getAdminDashboard();
-    List<com.insurancefraud.claim.dto.ClaimSummaryResponseDto> getUnassignedClaimsForTenant();
+
+    List<AdminClaimSummaryResponseDto> getUnassignedClaimsForTenant();
 
     PaginatedAdminClaimResponseDto getAllClaims(
             int pageNumber,
@@ -27,11 +27,13 @@ public interface AdminClaimService {
             String sortDir
     );
 
-    com.insurancefraud.claim.dto.ClaimDetailResponseDto getClaimById(Long claimId);
+    AdminClaimDetailResponseDto getClaimById(Long claimId);
+
     List<com.insurancefraud.document.dto.ClaimDocumentsResponseDto> getClaimDocuments(Long claimId);
+
     org.springframework.core.io.Resource downloadDocument(Long documentId);
+
     com.insurancefraud.entity.ClaimDocument getClaimDocumentById(Long documentId);
+
+    void rerunAiAnalysis(Long claimId);
 }
-
-
-

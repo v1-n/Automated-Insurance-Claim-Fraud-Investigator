@@ -4,8 +4,11 @@ import com.insurancefraud.enums.Severity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 
 @Entity
 @Getter
@@ -39,6 +42,14 @@ public class ClaimEvidenceFlag {
 
     @Column(name = "explanation", columnDefinition = "TEXT")
     private String explanation;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "benign_explanations", columnDefinition = "json")
+    private List<String> benignExplanations;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "next_steps", columnDefinition = "json")
+    private List<String> nextSteps;
 
     @Column(name = "confidence")
     private Double confidence;

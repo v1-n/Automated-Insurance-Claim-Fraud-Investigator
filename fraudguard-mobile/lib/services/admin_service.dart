@@ -103,4 +103,10 @@ class AdminService {
     }
     return [];
   }
+
+  Future<void> rerunAiAnalysis(String claimId) async {
+    dev.log('[ADMIN_SERVICE] Triggering AI analysis rerun for claim $claimId', name: 'AdminService');
+    await _api.post('/admin/claims/$claimId/ai-analysis/rerun');
+    dev.log('[ADMIN_SERVICE] AI analysis rerun triggered successfully for claim $claimId', name: 'AdminService');
+  }
 }

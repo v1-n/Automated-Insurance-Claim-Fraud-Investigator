@@ -99,6 +99,13 @@ public class Claim {
     @Column(name = "ai_summary", columnDefinition = "TEXT")
     private String aiSummary;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ai_status", length = 32)
+    private com.insurancefraud.enums.AiStatus aiStatus;
+
+    @Column(name = "ai_analyzed_at")
+    private Instant aiAnalyzedAt;
+
     @Column(name = "submitted_at")
     private Instant submittedAt;
 

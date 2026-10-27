@@ -37,3 +37,7 @@ export const getAdminClaimDocuments = (claimId) =>
 /** Download document for admin */
 export const downloadAdminDocument = (documentId) =>
   api.get(`/admin/documents/${documentId}/download`, { responseType: "blob" });
+
+/** Re-run AI analysis for a claim */
+export const rerunAiAnalysis = (claimId) =>
+  api.post(`/admin/claims/${claimId}/ai-analysis/rerun`);

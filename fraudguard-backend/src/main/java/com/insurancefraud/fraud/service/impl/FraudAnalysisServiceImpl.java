@@ -54,16 +54,29 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
         Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
                 .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
 
-        int nextVersion = claimAnalysisRunRepo.findLatestRunVersion(claimId) + 1;
+        // Mark claim as currently RUNNING analysis
+        claim.setAiStatus(com.insurancefraud.enums.AiStatus.RUNNING);
+        claimRepo.save(claim);
 
-        ClaimAnalysisRun run = new ClaimAnalysisRun();
-        run.setTenant(claim.getTenant());
-        run.setClaim(claim);
-        run.setRunVersion(nextVersion);
-        run.setOutboxEventId(outboxEventId);
-        run.setTriggerType(triggerType != null ? triggerType : "UNKNOWN");
+        // On retried messages, reuse existing run row for this event rather than generating duplicate versions
+        ClaimAnalysisRun run = null;
+        if (outboxEventId != null) {
+            run = claimAnalysisRunRepo.findFirstByOutboxEventIdOrderByRunIdDesc(outboxEventId).orElse(null);
+        }
+
+        if (run == null) {
+            int nextVersion = claimAnalysisRunRepo.findLatestRunVersion(claimId) + 1;
+            run = new ClaimAnalysisRun();
+            run.setTenant(claim.getTenant());
+            run.setClaim(claim);
+            run.setRunVersion(nextVersion);
+            run.setOutboxEventId(outboxEventId);
+            run.setTriggerType(triggerType != null ? triggerType : "UNKNOWN");
+        }
+
         run.setStatus(AnalysisRunStatus.STARTED);
         run.setStartedAt(Instant.now());
+        run.setErrorMessage(null);
         run = claimAnalysisRunRepo.save(run);
 
         AnalyzeClaimResponseDto response;
@@ -73,15 +86,16 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
             // HTTP call happens outside any DB transaction
             response = aiAnalysisClient.dispatchToAi(requestDto);
 
-            // Mark run as COMPLETED with results
+            // Proxied transactional write via separate bean FIRST!
+            analysisResultWriter.persistResults(claimId, response);
+
+            // Mark run as COMPLETED only after persistResults succeeds!
             run.setStatus(AnalysisRunStatus.COMPLETED);
             run.setCompletedAt(Instant.now());
             run.setRiskScore(BigDecimal.valueOf(response.getRisk_score()));
             run.setRecommendation(response.getRecommendation());
             claimAnalysisRunRepo.save(run);
 
-            // Proxied transactional write via separate bean
-            analysisResultWriter.persistResults(claimId, response);
             return response;
         } catch (Exception ex) {
             run.setStatus(AnalysisRunStatus.FAILED);
@@ -89,7 +103,7 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
             String errorMsg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
             run.setErrorMessage(errorMsg.substring(0, Math.min(errorMsg.length(), 1000)));
             claimAnalysisRunRepo.save(run);
-            log.error("AI Analysis Run #{} failed for Claim #{}: {}", nextVersion, claim.getClaimNumber(), errorMsg);
+            log.error("AI Analysis Run failed for Claim #{}: {}", claim.getClaimNumber(), errorMsg);
             throw ex;
         }
     }

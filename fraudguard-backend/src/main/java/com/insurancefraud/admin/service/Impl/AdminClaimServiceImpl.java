@@ -27,7 +27,9 @@ import com.insurancefraud.entity.Policy;
 import com.insurancefraud.enums.PolicyStatus;
 import com.insurancefraud.policy.repository.PolicyRepo;
 import com.insurancefraud.outbox.service.OutboxService;
-import java.util.Map;
+import com.insurancefraud.entity.ClaimEvidenceFlag;
+import com.insurancefraud.fraud.dto.AiAnalysisDto;
+import com.insurancefraud.fraud.dto.AiFlagDto;
 
 @Service
 @Slf4j
@@ -41,8 +43,9 @@ public class AdminClaimServiceImpl implements AdminClaimService {
     private final StorageService storageService;
     private final PolicyRepo policyRepo;
     private final OutboxService outboxService;
+    private final com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
 
-    public AdminClaimServiceImpl(CurrentUserService currentUserService,UserRepo userRepo,ClaimRepo claimRepo,ModelMapper mapper, ClaimDocumentRepo claimDocumentRepo, StorageService storageService, PolicyRepo policyRepo, OutboxService outboxService) {
+    public AdminClaimServiceImpl(CurrentUserService currentUserService,UserRepo userRepo,ClaimRepo claimRepo,ModelMapper mapper, ClaimDocumentRepo claimDocumentRepo, StorageService storageService, PolicyRepo policyRepo, OutboxService outboxService, com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo claimEvidenceFlagRepo) {
         this.currentUserService = currentUserService;
         this.userRepo = userRepo;
         this.claimRepo =claimRepo;
@@ -51,6 +54,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         this.storageService = storageService;
         this.policyRepo = policyRepo;
         this.outboxService = outboxService;
+        this.claimEvidenceFlagRepo = claimEvidenceFlagRepo;
     }
 
     @Override
@@ -85,16 +89,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setClaimStatus(ClaimStatus.UNDER_REVIEW);
         claimRepo.save(claim);
 
-        outboxService.record(
-                EventType.CLAIM_ASSIGNED,
-                claim,
-                Map.of(
-                        "investigatorId", investigator.getUserId(),
-                        "investigatorEmail", investigator.getEmail(),
-                        "investigatorName", investigator.getFullName()
-                ),
-                admin.getUserId()
-        );
+        outboxService.record(EventType.CLAIM_ASSIGNED, claim);
 
         log.info(
                 "Admin {} assigned investigator {} to claim {}",
@@ -172,12 +167,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setFraudStatus(FraudStatus.CLEAR);
         claimRepo.save(claim);
 
-        outboxService.record(
-                EventType.CLAIM_APPROVED,
-                claim,
-                Map.of("decisionNotes", claim.getDecisionNotes() != null ? claim.getDecisionNotes() : ""),
-                admin.getUserId()
-        );
+        outboxService.record(EventType.CLAIM_APPROVED, claim);
 
         log.info(
                 "Admin {} approved claim {}",
@@ -220,12 +210,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setFraudStatus(FraudStatus.CONFIRMED);
         claimRepo.save(claim);
 
-        outboxService.record(
-                EventType.CLAIM_REJECTED,
-                claim,
-                Map.of("decisionNotes", claim.getDecisionNotes() != null ? claim.getDecisionNotes() : ""),
-                admin.getUserId()
-        );
+        outboxService.record(EventType.CLAIM_REJECTED, claim);
 
         log.info(
                 "Admin {} rejected claim {}",
@@ -280,7 +265,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
 
     @Transactional(readOnly = true)
     @Override
-    public List<ClaimSummaryResponseDto> getUnassignedClaimsForTenant() {
+    public List<AdminClaimSummaryResponseDto> getUnassignedClaimsForTenant() {
         User admin = currentUserService.getCurrentActiveUser();
 
         String tenantCode = admin.getTenant().getTenantCode();
@@ -290,16 +275,21 @@ public class AdminClaimServiceImpl implements AdminClaimService {
                 admin.getEmail(), tenantCode, claims.size());
 
         return claims.stream().map(c -> {
-            ClaimSummaryResponseDto dto = new ClaimSummaryResponseDto();
+            AdminClaimSummaryResponseDto dto = new AdminClaimSummaryResponseDto();
             dto.setClaimId(c.getClaimId());
             dto.setClaimNumber(c.getClaimNumber());
             dto.setClaimType(c.getClaimType());
             dto.setClaimAmount(c.getClaimAmount());
             dto.setClaimStatus(c.getClaimStatus());
             dto.setFraudStatus(c.getFraudStatus());
+            dto.setFraudScore(c.getFraudScore());
+            dto.setAiRiskLevel(c.getAiRiskLevel());
             dto.setIncidentDate(c.getIncidentDate());
             dto.setIncidentCity(c.getIncidentCity());
             dto.setCreatedAt(c.getCreatedAt());
+            dto.setCustomerName(c.getUser() != null && !c.getUser().isDeleted() ? c.getUser().getFullName() : "Deleted User");
+            dto.setCustomerEmail(c.getUser() != null ? c.getUser().getEmail() : null);
+            dto.setInvestigatorName("Not Assigned");
             return dto;
         }).toList();
     }
@@ -321,16 +311,23 @@ public class AdminClaimServiceImpl implements AdminClaimService {
                         pageable
                 );
 
-        List<ClaimSummaryResponseDto> dtoList =
+        List<AdminClaimSummaryResponseDto> dtoList =
                 claimPages.getContent()
                         .stream()
                         .map(claim -> {
-
-                            ClaimSummaryResponseDto dto =
-                                    mapper.map(
-                                            claim,
-                                            ClaimSummaryResponseDto.class
-                                    );
+                            AdminClaimSummaryResponseDto dto = new AdminClaimSummaryResponseDto();
+                            dto.setClaimId(claim.getClaimId());
+                            dto.setClaimNumber(claim.getClaimNumber());
+                            dto.setClaimType(claim.getClaimType());
+                            dto.setClaimAmount(claim.getClaimAmount());
+                            dto.setClaimStatus(claim.getClaimStatus());
+                            dto.setFraudStatus(claim.getFraudStatus());
+                            dto.setFraudScore(claim.getFraudScore());
+                            dto.setAiRiskLevel(claim.getAiRiskLevel());
+                            dto.setIncidentDate(claim.getIncidentDate());
+                            dto.setIncidentCity(claim.getIncidentCity());
+                            dto.setDecisionNotes(claim.getDecisionNotes());
+                            dto.setCreatedAt(claim.getCreatedAt());
 
                             dto.setCustomerName(
                                     claim.getUser().isDeleted()
@@ -370,16 +367,62 @@ public class AdminClaimServiceImpl implements AdminClaimService {
 
     @Override
     @Transactional(readOnly = true)
-    public com.insurancefraud.claim.dto.ClaimDetailResponseDto getClaimById(Long claimId) {
+    public AdminClaimDetailResponseDto getClaimById(Long claimId) {
         User admin = currentUserService.getCurrentActiveUser();
         Claim claim = claimRepo.findByClaimIdAndTenantAndIsDeletedFalse(claimId, admin.getTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Claim not found"));
 
-        com.insurancefraud.claim.dto.ClaimDetailResponseDto dto = mapper.map(claim, com.insurancefraud.claim.dto.ClaimDetailResponseDto.class);
+        AdminClaimDetailResponseDto dto = new AdminClaimDetailResponseDto();
+        dto.setClaimId(claim.getClaimId());
+        dto.setClaimNumber(claim.getClaimNumber());
+        dto.setClaimType(claim.getClaimType());
+        dto.setClaimAmount(claim.getClaimAmount());
+        dto.setClaimStatus(claim.getClaimStatus());
+        dto.setFraudStatus(claim.getFraudStatus());
+        dto.setFraudScore(claim.getFraudScore());
+
+        String aiStatusStr = claim.getAiStatus() != null ? claim.getAiStatus().name() : (claim.getFraudScore() != null ? "DONE" : "PENDING");
+        dto.setAiStatus(aiStatusStr);
+        dto.setAiRiskLevel(claim.getAiRiskLevel());
+        dto.setAiRecommendation(claim.getAiRecommendation());
+        dto.setAiSummary(claim.getAiSummary());
+
+        List<ClaimEvidenceFlag> flags = claimEvidenceFlagRepo.findByClaim_ClaimId(claimId);
+        List<AiFlagDto> flagDtos = flags.stream().map(f -> new AiFlagDto(
+                f.getCode(),
+                f.getCategory(),
+                f.getSeverity() != null ? f.getSeverity().name() : "LOW",
+                f.getExplanation(),
+                f.getBenignExplanations(),
+                f.getNextSteps(),
+                f.getConfidence()
+        )).toList();
+
+        AiAnalysisDto aiAnalysis = new AiAnalysisDto(
+                aiStatusStr,
+                claim.getFraudScore(),
+                claim.getAiRiskLevel(),
+                claim.getAiRecommendation(),
+                claim.getAiSummary(),
+                claim.getAiAnalyzedAt(),
+                flagDtos
+        );
+        dto.setAiAnalysis(aiAnalysis);
+
+        dto.setDescription(claim.getDescription());
+        dto.setIncidentDate(claim.getIncidentDate());
+        dto.setIncidentAddress(claim.getIncidentAddress());
+        dto.setIncidentCity(claim.getIncidentCity());
+        dto.setIncidentState(claim.getIncidentState());
+        dto.setReviewNotes(claim.getReviewNotes());
+        dto.setDecisionNotes(claim.getDecisionNotes());
+
         dto.setCustomerName(claim.getUser().isDeleted() ? "Deleted User" : claim.getUser().getFullName());
         dto.setCustomerEmail(claim.getUser().getEmail());
         dto.setInvestigatorName(claim.getAssignedInvestigator() != null ? claim.getAssignedInvestigator().getFullName() : "Not Assigned");
         dto.setTenantCode(claim.getTenant().getTenantCode());
+        dto.setCreatedAt(claim.getCreatedAt());
+        dto.setUpdatedAt(claim.getUpdatedAt());
 
         Policy policy = claim.getPolicy();
         if (policy == null && claim.getUser() != null) {
@@ -440,6 +483,21 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         return claimDocumentRepo
                 .findByClaimDocIdAndTenantAndIsDeletedFalse(documentId, admin.getTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found with ID: " + documentId));
+    }
+
+    @Override
+    @Transactional
+    public void rerunAiAnalysis(Long claimId) {
+        User admin = currentUserService.getCurrentActiveUser();
+        Claim claim = claimRepo.findByClaimIdAndTenantAndIsDeletedFalse(claimId, admin.getTenant())
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found"));
+
+        claim.setAiStatus(AiStatus.PENDING);
+        claimRepo.save(claim);
+
+        outboxService.record(EventType.AI_ANALYSIS_RERUN_REQUESTED, claim);
+
+        log.info("Admin {} requested AI analysis rerun for claim {}", admin.getEmail(), claim.getClaimNumber());
     }
 }
 

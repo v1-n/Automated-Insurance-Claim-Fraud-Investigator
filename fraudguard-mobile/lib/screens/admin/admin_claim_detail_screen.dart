@@ -10,6 +10,7 @@ import '../../models/document_model.dart';
 import '../../providers/admin_claim_detail_provider.dart';
 import '../../services/document_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ai_risk_card.dart';
 
 class AdminClaimDetailScreen extends StatelessWidget {
   final String claimId;
@@ -661,6 +662,27 @@ class _AdminClaimDetailBodyState extends State<_AdminClaimDetailBody> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+
+                  // ── AI FRAUD RISK ASSESSMENT ─────────────────
+                  AiRiskCard(
+                    claim: c,
+                    isRerunning: provider.isProcessing,
+                    onRerun: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final ok = await provider.rerunAiAnalysis(widget.claimId);
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'AI analysis rerun requested. Results will update shortly.'
+                                : 'Failed to trigger rerun: ${provider.errorMessage}'),
+                            backgroundColor: ok ? AppTheme.primaryBlue : AppTheme.dangerRed,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
 
                   // ── CLAIM INFORMATION ────────────────────────
                   _Card(title: 'Claim Information', icon: Icons.description_outlined, cardColor: cardColor, borderColor: borderColor, children: [

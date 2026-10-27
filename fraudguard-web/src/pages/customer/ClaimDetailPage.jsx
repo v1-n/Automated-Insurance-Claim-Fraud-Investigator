@@ -61,19 +61,6 @@ function StatusBadge({ status, size = "md" }) {
   );
 }
 
-function FraudBadge({ status }) {
-  const map = {
-    SUSPECTED: { cls: "bg-slate-50 text-slate-900 ring-slate-200" },
-    CONFIRMED: { cls: "bg-red-50 text-red-700 ring-red-200" },
-    CLEAR: { cls: "bg-slate-50 text-slate-900 ring-slate-200" },
-  };
-  const cfg = map[status] || { cls: "bg-slate-50 text-slate-500 ring-slate-200" };
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cfg.cls}`}>
-      {status ? pretty(status) : "Unreviewed"}
-    </span>
-  );
-}
 
 function DocStatusBadge({ status }) {
   const map = {
@@ -358,7 +345,6 @@ export default function ClaimDetailPage() {
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-xl font-bold text-slate-900">{claim.claimNumber || `#${claimId}`}</h1>
               <StatusBadge status={claim.claimStatus} />
-              <FraudBadge status={claim.fraudStatus} />
             </div>
             <p className="text-sm text-slate-500">
               {pretty(claim.claimType)} • Submitted {fmtDateTime(claim.createdAt)}
@@ -417,20 +403,20 @@ export default function ClaimDetailPage() {
               </div>
             </div>
 
-            {/* RIGHT: Fraud Status Sidebar */}
+            {/* RIGHT: Claim Status Sidebar */}
             <div className="space-y-6">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                 <h2 className="text-base font-semibold text-slate-800 mb-6 flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-slate-700" /> Fraud Status
+                  <ShieldAlert className="h-4 w-4 text-slate-700" /> Claim Summary
                 </h2>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Claim Status</span>
+                    <span className="text-slate-500">Status</span>
                     <StatusBadge status={claim.claimStatus} />
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Fraud Status</span>
-                    <FraudBadge status={claim.fraudStatus} />
+                    <span className="text-slate-500">Claim Type</span>
+                    <span className="font-medium text-slate-800">{pretty(claim.claimType)}</span>
                   </div>
                 </div>
               </div>

@@ -17,8 +17,8 @@ class ImageCompressor {
 
     try {
       final size = await file.length();
-      // If already under 1MB, keep as is
-      if (size <= 1024 * 1024) {
+      // If already under 5MB (well within the 10MB upload limit), keep original file to preserve pristine EXIF metadata
+      if (size <= 5 * 1024 * 1024) {
         return file;
       }
 
@@ -36,9 +36,11 @@ class ImageCompressor {
           } else {
             resized = img.copyResize(image, height: 1080);
           }
+          // Explicitly preserve EXIF metadata from original image
+          resized.exif = image.exif;
         }
 
-        final encoded = img.encodeJpg(resized, quality: 80);
+        final encoded = img.encodeJpg(resized, quality: 85);
         return Uint8List.fromList(encoded);
       });
 

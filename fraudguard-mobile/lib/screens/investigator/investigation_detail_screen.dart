@@ -11,6 +11,7 @@ import '../../models/document_model.dart';
 import '../../providers/investigator_claims_provider.dart';
 import '../../services/document_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ai_risk_card.dart';
 
 class InvestigationDetailScreen extends StatefulWidget {
   final String claimId;
@@ -605,7 +606,6 @@ class _InvestigationDetailScreenState extends State<InvestigationDetailScreen> {
       );
     }
 
-    final riskColor = AppTheme.getRiskColor(_claim!.fraudScore);
     final statusColor = AppTheme.getStatusColor(_claim!.status);
 
     return Scaffold(
@@ -662,68 +662,8 @@ class _InvestigationDetailScreenState extends State<InvestigationDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── AI FRAUD RISK GAUGE ──
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Row(
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          height: 90,
-                          width: 90,
-                          child: CircularProgressIndicator(
-                            value: _claim!.fraudScore / 100.0,
-                            strokeWidth: 8,
-                            backgroundColor: isDark ? const Color(0xFF334155) : Colors.grey[200],
-                            color: riskColor,
-                          ),
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${_claim!.fraudScore.toInt()}%',
-                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
-                            ),
-                            Text(
-                              'RISK',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: labelColor),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 24),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'AI Fraud Analysis',
-                            style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _claim!.fraudScore >= 70
-                                ? 'High probability of fraud matching standard patterns.'
-                                : _claim!.fraudScore >= 40
-                                    ? 'Moderate level of concerns. Manual inspection needed.'
-                                    : 'Lower probability of fraud. Standard verification.',
-                            style: TextStyle(color: Colors.grey[500], fontSize: 12, height: 1.4),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // ── AI FRAUD RISK CARD ──
+              AiRiskCard(claim: _claim!),
               const SizedBox(height: 16),
 
               // ── CLAIMANT & POLICY CARD ──

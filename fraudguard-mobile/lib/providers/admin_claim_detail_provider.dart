@@ -105,4 +105,19 @@ class AdminClaimDetailProvider extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> rerunAiAnalysis(String claimId) async {
+    isProcessing = true;
+    notifyListeners();
+    try {
+      await _adminService.rerunAiAnalysis(claimId);
+      await load(claimId);
+      return true;
+    } catch (e) {
+      errorMessage = e.toString();
+      isProcessing = false;
+      notifyListeners();
+      return false;
+    }
+  }
 }

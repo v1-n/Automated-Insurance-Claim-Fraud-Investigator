@@ -8,8 +8,10 @@ import {
   rejectClaim,
   getAdminClaimById,
   getAdminClaimDocuments,
-  downloadAdminDocument
+  downloadAdminDocument,
+  rerunAiAnalysis
 } from "../../services/adminService";
+import AiRiskCard from "../../components/AiRiskCard";
 import {
   ArrowLeft, FileText, MapPin, Calendar, IndianRupee,
   Loader2, AlertTriangle, CheckCircle2, Clock, XCircle,
@@ -105,6 +107,7 @@ export default function AdminClaimDetailPage() {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);
+  const [isRerunning, setIsRerunning] = useState(false);
 
   useEffect(() => { fetchAll(); }, [claimId]);
 
@@ -124,6 +127,18 @@ export default function AdminClaimDetailPage() {
     } finally {
       setLoading(false);
       setDocsLoading(false);
+    }
+  };
+
+  const handleRerun = async () => {
+    setIsRerunning(true);
+    try {
+      await rerunAiAnalysis(claimId);
+      await fetchAll();
+    } catch (err) {
+      console.error("Failed to rerun AI analysis:", err);
+    } finally {
+      setIsRerunning(false);
     }
   };
 
@@ -197,6 +212,9 @@ export default function AdminClaimDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* AI Fraud Analysis */}
+          <AiRiskCard claim={claim} onRerun={handleRerun} isRerunning={isRerunning} />
 
           {/* Two-panel layout */}
           <div className="grid lg:grid-cols-2 gap-6">

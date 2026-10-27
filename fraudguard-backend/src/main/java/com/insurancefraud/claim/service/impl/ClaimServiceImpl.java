@@ -184,6 +184,7 @@ public class ClaimServiceImpl implements ClaimService {
 
         claim.setSubmittedAt(Instant.now());
         claim.setFraudStatus(FraudStatus.PENDING_ANALYSIS);
+        claim.setAiStatus(com.insurancefraud.enums.AiStatus.PENDING);
         claimRepo.save(claim);
 
         outboxService.record(EventType.CLAIM_SUBMITTED, claim);

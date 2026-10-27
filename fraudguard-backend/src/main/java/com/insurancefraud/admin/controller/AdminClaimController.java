@@ -115,8 +115,8 @@ public class AdminClaimController {
     }
 
     @GetMapping("/claims/unassigned")
-    public ResponseEntity<ApiResponse<List<ClaimSummaryResponseDto>>> getUnassignedClaims() {
-        List<ClaimSummaryResponseDto> claims = adminClaimService.getUnassignedClaimsForTenant();
+    public ResponseEntity<ApiResponse<List<AdminClaimSummaryResponseDto>>> getUnassignedClaims() {
+        List<AdminClaimSummaryResponseDto> claims = adminClaimService.getUnassignedClaimsForTenant();
         return ResponseEntity.ok(new ApiResponse<>(true, "Unassigned claims retrieved", 200, Instant.now(), claims));
     }
 
@@ -148,10 +148,10 @@ public class AdminClaimController {
     }
 
     @GetMapping("/claims/{claimId}")
-    public ResponseEntity<ApiResponse<com.insurancefraud.claim.dto.ClaimDetailResponseDto>> getClaimById(
+    public ResponseEntity<ApiResponse<AdminClaimDetailResponseDto>> getClaimById(
             @PathVariable Long claimId
     ) {
-        com.insurancefraud.claim.dto.ClaimDetailResponseDto data = adminClaimService.getClaimById(claimId);
+        AdminClaimDetailResponseDto data = adminClaimService.getClaimById(claimId);
         return ResponseEntity.ok(
                 new ApiResponse<>(
                         true,
@@ -159,6 +159,22 @@ public class AdminClaimController {
                         HttpStatus.OK.value(),
                         Instant.now(),
                         data
+                )
+        );
+    }
+
+    @PostMapping("/claims/{claimId}/ai-analysis/rerun")
+    public ResponseEntity<ApiResponse<Void>> rerunAiAnalysis(
+            @PathVariable Long claimId
+    ) {
+        adminClaimService.rerunAiAnalysis(claimId);
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        true,
+                        "AI analysis rerun requested successfully",
+                        HttpStatus.OK.value(),
+                        Instant.now(),
+                        null
                 )
         );
     }
