@@ -26,6 +26,9 @@ import com.insurancefraud.common.exception.FileStorageException;
 import com.insurancefraud.entity.Policy;
 import com.insurancefraud.enums.PolicyStatus;
 import com.insurancefraud.policy.repository.PolicyRepo;
+import com.insurancefraud.outbox.service.OutboxService;
+import java.util.Map;
+
 @Service
 @Slf4j
 public class AdminClaimServiceImpl implements AdminClaimService {
@@ -37,8 +40,9 @@ public class AdminClaimServiceImpl implements AdminClaimService {
     private final ClaimDocumentRepo claimDocumentRepo;
     private final StorageService storageService;
     private final PolicyRepo policyRepo;
+    private final OutboxService outboxService;
 
-    public AdminClaimServiceImpl(CurrentUserService currentUserService,UserRepo userRepo,ClaimRepo claimRepo,ModelMapper mapper, ClaimDocumentRepo claimDocumentRepo, StorageService storageService, PolicyRepo policyRepo) {
+    public AdminClaimServiceImpl(CurrentUserService currentUserService,UserRepo userRepo,ClaimRepo claimRepo,ModelMapper mapper, ClaimDocumentRepo claimDocumentRepo, StorageService storageService, PolicyRepo policyRepo, OutboxService outboxService) {
         this.currentUserService = currentUserService;
         this.userRepo = userRepo;
         this.claimRepo =claimRepo;
@@ -46,6 +50,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         this.claimDocumentRepo = claimDocumentRepo;
         this.storageService = storageService;
         this.policyRepo = policyRepo;
+        this.outboxService = outboxService;
     }
 
     @Override
@@ -79,6 +84,17 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setAssignedInvestigator(investigator);
         claim.setClaimStatus(ClaimStatus.UNDER_REVIEW);
         claimRepo.save(claim);
+
+        outboxService.record(
+                EventType.CLAIM_ASSIGNED,
+                claim,
+                Map.of(
+                        "investigatorId", investigator.getUserId(),
+                        "investigatorEmail", investigator.getEmail(),
+                        "investigatorName", investigator.getFullName()
+                ),
+                admin.getUserId()
+        );
 
         log.info(
                 "Admin {} assigned investigator {} to claim {}",
@@ -156,6 +172,13 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setFraudStatus(FraudStatus.CLEAR);
         claimRepo.save(claim);
 
+        outboxService.record(
+                EventType.CLAIM_APPROVED,
+                claim,
+                Map.of("decisionNotes", claim.getDecisionNotes() != null ? claim.getDecisionNotes() : ""),
+                admin.getUserId()
+        );
+
         log.info(
                 "Admin {} approved claim {}",
                 admin.getEmail(),
@@ -196,6 +219,13 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         claim.setClaimStatus(ClaimStatus.REJECTED);
         claim.setFraudStatus(FraudStatus.CONFIRMED);
         claimRepo.save(claim);
+
+        outboxService.record(
+                EventType.CLAIM_REJECTED,
+                claim,
+                Map.of("decisionNotes", claim.getDecisionNotes() != null ? claim.getDecisionNotes() : ""),
+                admin.getUserId()
+        );
 
         log.info(
                 "Admin {} rejected claim {}",

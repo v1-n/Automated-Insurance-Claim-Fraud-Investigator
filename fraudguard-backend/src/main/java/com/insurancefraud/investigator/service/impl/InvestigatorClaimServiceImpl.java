@@ -21,9 +21,12 @@ import com.insurancefraud.investigator.service.InvestigatorClaimService;
 import com.insurancefraud.entity.Policy;
 import com.insurancefraud.enums.PolicyStatus;
 import com.insurancefraud.policy.repository.PolicyRepo;
+import com.insurancefraud.enums.EventType;
+import com.insurancefraud.outbox.service.OutboxService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -33,13 +36,14 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
     private final ClaimRepo claimRepo;
     private final ClaimDocumentRepo claimDocumentRepo;
     private final PolicyRepo policyRepo;
+    private final OutboxService outboxService;
 
-
-    public InvestigatorClaimServiceImpl(CurrentUserService currentUserService, ClaimRepo claimRepo, ClaimDocumentRepo claimDocumentRepo, PolicyRepo policyRepo) {
+    public InvestigatorClaimServiceImpl(CurrentUserService currentUserService, ClaimRepo claimRepo, ClaimDocumentRepo claimDocumentRepo, PolicyRepo policyRepo, OutboxService outboxService) {
         this.currentUserService = currentUserService;
         this.claimRepo = claimRepo;
         this.claimDocumentRepo = claimDocumentRepo;
         this.policyRepo = policyRepo;
+        this.outboxService = outboxService;
     }
 
 
@@ -202,6 +206,17 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
         claim.setReviewNotes(requestDto.getReviewNotes());
         claim.setFraudStatus(requestDto.getFraudStatus());
         claimRepo.save(claim);
+
+        outboxService.record(
+                EventType.REVIEW_SUBMITTED,
+                claim,
+                Map.of(
+                        "fraudStatus", claim.getFraudStatus().name(),
+                        "reviewNotes", claim.getReviewNotes() != null ? claim.getReviewNotes() : ""
+                ),
+                investigator.getUserId()
+        );
+
         log.info(
                 "Investigator {} reviewed claim {}",
                 investigator.getEmail(),

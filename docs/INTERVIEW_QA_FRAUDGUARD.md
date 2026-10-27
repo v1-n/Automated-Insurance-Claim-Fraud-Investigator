@@ -368,6 +368,44 @@
 
 ---
 
+### Q29: How do you prevent AI Analysis Storms, handle RabbitMQ Publisher Confirms in the Outbox Pattern, and guarantee Consumer Idempotency?
+* **Interviewer Angle**: Distributed transaction boundaries, event storming hazards, asynchronous confirmation protocols, and database-level idempotency patterns.
+* **Elevator Pitch**:
+  > *"In an event-driven AI architecture, three critical pitfalls often emerge in production:*
+  > 
+  > *1. **The Premature AI Trigger & Verdict Overwrite Bug** :*
+  > *   **Problem**: If document upload endpoints automatically emit `CLAIM_DOCUMENT_ADDED` and reset `fraudStatus = PENDING_ANALYSIS`, two major problems occur:*
+  > *     a) When a user creates a claim and uploads 5 photos before submission, 5 redundant AI analysis runs trigger in parallel on an incomplete draft, wasting GPU/API resources and causing race conditions on flag tables.*
+  > *     b) If an investigator has already marked a claim `CONFIRMED` or `CLEAR`, uploading an additional document wipes out the human investigator's verdict back to `PENDING_ANALYSIS`.*
+  > *   **Solution**: Strict domain boundaries. Document upload NEVER touches `claim.fraudStatus`! AI analysis is strictly triggered at `POST /claims/{id}/submit`. For subsequent document uploads, `CLAIM_DOCUMENT_ADDED` is emitted **only** if `claim.getSubmittedAt() != null && claim.getClaimStatus() == ClaimStatus.PENDING`.*
+  > 
+  > *2. **The Outbox Relay Fire-and-Forget Silent Drop Bug** :*
+  > *   **Problem**: In the Transactional Outbox Pattern, calling `rabbitTemplate.send(exchange, routingKey, msg)` without awaiting confirmation is merely a socket push. If the broker crashes, NACKs, or if the routing key is unroutable, the relay would still mark the event `PUBLISHED` in the database, resulting in silent, undetectable event loss.*
+  > *   **Solution**: **Correlated Publisher Confirms + Mandatory Return Detection**:*
+  > *   Enable `publisher-confirm-type=correlated`, `publisher-returns=true`, and `template.mandatory=true`. In `OutboxRelay`, pass `CorrelationData`:*
+  > ```java
+  > CorrelationData cd = new CorrelationData(String.valueOf(event.getEventId()));
+  > rabbitTemplate.send(exchange, routingKey, message, cd);
+  > 
+  > CorrelationData.Confirm confirm = cd.getFuture().get(5, TimeUnit.SECONDS);
+  > if (confirm == null || !confirm.isAck()) {
+  >     throw new IllegalStateException("RabbitMQ NACK or timeout for event #" + event.getEventId());
+  > }
+  > if (cd.getReturned() != null) {
+  >     throw new IllegalStateException("Unroutable message returned for event #" + event.getEventId());
+  > }
+  > event.setStatus(OutboxStatus.PUBLISHED);
+  > ```
+  > *   If a timeout, NACK, or unroutable return occurs, an exception is thrown, rolling back the lease, triggering exponential backoff retry (3^attempts seconds), and marking `DEAD` after 5 failed attempts.*
+  > 
+  > *3. **Centralized Outbox Pattern with `Propagation.MANDATORY`** :*
+  > *   By enforcing `@Transactional(propagation = Propagation.MANDATORY)` in `OutboxServiceImpl`, calling code cannot write an outbox event unless an active database transaction already exists. If someone attempts to emit an event outside a transaction, Spring immediately throws `IllegalTransactionStateException`, preventing partial state saves.*
+  > 
+  > *4. **Consumer Idempotency via `ClaimAnalysisRun`** :*
+  > *   To prevent redundant analysis upon message redelivery, `ClaimAnalysisConsumer` checks `claimAnalysisRunRepo.existsByOutboxEventId(eventId)`. Furthermore, `ClaimAnalysisRun` defines a database unique constraint on `(claim_id, run_version)`. If duplicate concurrent workers attempt to start the same run version, the database unique key violation atomically aborts the duplicate thread."*
+
+---
+
 *(This document is actively maintained as new architectural components are implemented in FraudGuard.)*
 
 

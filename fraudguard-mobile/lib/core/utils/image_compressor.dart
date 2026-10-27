@@ -1,9 +1,13 @@
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 class ImageCompressor {
   /// Compresses and resizes an image file if it exceeds 1MB.
   /// Non-image files (like PDFs) are returned untouched.
+  /// Heavy image decoding, resizing, and JPEG encoding are executed
+  /// in a separate Isolate using Isolate.run to prevent Flutter UI stutter.
   static Future<File> compressIfNeeded(File file) async {
     final ext = file.path.split('.').last.toLowerCase();
     const supportedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'bmp'];
@@ -19,21 +23,28 @@ class ImageCompressor {
       }
 
       final bytes = await file.readAsBytes();
-      final image = img.decodeImage(bytes);
-      if (image == null) return file;
 
-      // Downscale if exceeds 1920x1080 while preserving aspect ratio
-      img.Image resized = image;
-      if (image.width > 1920 || image.height > 1080) {
-        if (image.width >= image.height) {
-          resized = img.copyResize(image, width: 1920);
-        } else {
-          resized = img.copyResize(image, height: 1080);
+      // Offload CPU-intensive decoding, downsampling, and encoding to a background isolate
+      final Uint8List? compressedBytes = await Isolate.run<Uint8List?>(() {
+        final image = img.decodeImage(bytes);
+        if (image == null) return null;
+
+        img.Image resized = image;
+        if (image.width > 1920 || image.height > 1080) {
+          if (image.width >= image.height) {
+            resized = img.copyResize(image, width: 1920);
+          } else {
+            resized = img.copyResize(image, height: 1080);
+          }
         }
-      }
 
-      // Encode as JPEG with 80% quality (slashes 15MB down to ~400KB)
-      final compressedBytes = img.encodeJpg(resized, quality: 80);
+        final encoded = img.encodeJpg(resized, quality: 80);
+        return Uint8List.fromList(encoded);
+      });
+
+      if (compressedBytes == null) {
+        return file;
+      }
 
       final tempDir = file.parent.path;
       final cleanBaseName = file.path.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');

@@ -218,6 +218,18 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
           documentType: doc.documentType,
         )));
 
+        // Clean up temporary scaled images after successful upload
+        for (final doc in pickedDocs) {
+          if (doc.filePath.contains('/scaled_')) {
+            try {
+              final tempFile = File(doc.filePath);
+              if (tempFile.existsSync()) {
+                tempFile.deleteSync();
+              }
+            } catch (_) {}
+          }
+        }
+
         if (mounted) {
           _showSnackBar(
             'Successfully uploaded ${pickedDocs.length} document(s)!',

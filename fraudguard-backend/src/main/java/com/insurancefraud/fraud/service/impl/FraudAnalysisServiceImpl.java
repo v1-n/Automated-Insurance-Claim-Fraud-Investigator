@@ -16,6 +16,9 @@ import com.insurancefraud.fraud.client.AiAnalysisClient;
 import com.insurancefraud.fraud.dto.*;
 import com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo;
 import com.insurancefraud.fraud.service.FraudAnalysisService;
+import com.insurancefraud.entity.ClaimAnalysisRun;
+import com.insurancefraud.enums.AnalysisRunStatus;
+import com.insurancefraud.fraud.repository.ClaimAnalysisRunRepo;
 import com.insurancefraud.policy.repository.PolicyRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,17 +42,56 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
     private final ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
     private final CurrentUserService currentUserService;
     private final AnalysisResultWriter analysisResultWriter;
+    private final ClaimAnalysisRunRepo claimAnalysisRunRepo;
 
     @Override
     public AnalyzeClaimResponseDto analyzeClaimAsync(Long claimId) {
-        AnalyzeClaimRequestDto requestDto = buildRequestDto(claimId);
+        return analyzeClaimAsync(claimId, null, "MANUAL");
+    }
 
-        // HTTP call happens outside any DB transaction
-        AnalyzeClaimResponseDto response = aiAnalysisClient.dispatchToAi(requestDto);
+    @Override
+    public AnalyzeClaimResponseDto analyzeClaimAsync(Long claimId, Long outboxEventId, String triggerType) {
+        Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
 
-        // Proxied transactional write via separate bean
-        analysisResultWriter.persistResults(claimId, response);
-        return response;
+        int nextVersion = claimAnalysisRunRepo.findLatestRunVersion(claimId) + 1;
+
+        ClaimAnalysisRun run = new ClaimAnalysisRun();
+        run.setTenant(claim.getTenant());
+        run.setClaim(claim);
+        run.setRunVersion(nextVersion);
+        run.setOutboxEventId(outboxEventId);
+        run.setTriggerType(triggerType != null ? triggerType : "UNKNOWN");
+        run.setStatus(AnalysisRunStatus.STARTED);
+        run.setStartedAt(Instant.now());
+        run = claimAnalysisRunRepo.save(run);
+
+        AnalyzeClaimResponseDto response;
+        try {
+            AnalyzeClaimRequestDto requestDto = buildRequestDto(claimId);
+
+            // HTTP call happens outside any DB transaction
+            response = aiAnalysisClient.dispatchToAi(requestDto);
+
+            // Mark run as COMPLETED with results
+            run.setStatus(AnalysisRunStatus.COMPLETED);
+            run.setCompletedAt(Instant.now());
+            run.setRiskScore(BigDecimal.valueOf(response.getRisk_score()));
+            run.setRecommendation(response.getRecommendation());
+            claimAnalysisRunRepo.save(run);
+
+            // Proxied transactional write via separate bean
+            analysisResultWriter.persistResults(claimId, response);
+            return response;
+        } catch (Exception ex) {
+            run.setStatus(AnalysisRunStatus.FAILED);
+            run.setCompletedAt(Instant.now());
+            String errorMsg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+            run.setErrorMessage(errorMsg.substring(0, Math.min(errorMsg.length(), 1000)));
+            claimAnalysisRunRepo.save(run);
+            log.error("AI Analysis Run #{} failed for Claim #{}: {}", nextVersion, claim.getClaimNumber(), errorMsg);
+            throw ex;
+        }
     }
 
     public AnalyzeClaimRequestDto buildRequestDto(Long claimId){

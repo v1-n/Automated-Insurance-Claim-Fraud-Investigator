@@ -12,7 +12,7 @@ import com.insurancefraud.enums.*;
 import com.insurancefraud.common.exception.ResourceNotFoundException;
 import com.insurancefraud.claim.repository.ClaimRepo;
 import com.insurancefraud.claim.service.ClaimService;
-import com.insurancefraud.outbox.repository.OutboxEventRepo;
+import com.insurancefraud.outbox.service.OutboxService;
 import com.insurancefraud.util.PaginationUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,9 +38,8 @@ public class ClaimServiceImpl implements ClaimService {
     private final ClaimRepo claimRepo;
     private final PolicyRepo policyRepo;
     private final ModelMapper mapper;
-    private final OutboxEventRepo outboxEventRepo;
+    private final OutboxService outboxService;
     private final ClaimDocumentRepo claimDocumentRepo;
-    private final ObjectMapper objectMapper;
 
 
     public String generateClaimNumber(String tenantCode, Long claimId) {
@@ -187,29 +186,7 @@ public class ClaimServiceImpl implements ClaimService {
         claim.setFraudStatus(FraudStatus.PENDING_ANALYSIS);
         claimRepo.save(claim);
 
-        Map<String,Object> payloadMap = Map.of(
-                "claimId", claim.getClaimId(),
-                "claimNumber", claim.getClaimNumber(),
-                "tenantId", claim.getTenant().getTenantId()
-        );
-
-        try{
-            String payloadJson = objectMapper.writeValueAsString(payloadMap);
-            OutboxEvent outboxEvent = new OutboxEvent();
-            outboxEvent.setTenant(claim.getTenant());
-            outboxEvent.setEventType(EventType.CLAIM_SUBMITTED);
-            outboxEvent.setAggregateType(AggregateType.CLAIM);
-            outboxEvent.setAggregateId(claim.getClaimId());
-            outboxEvent.setPayload(payloadJson);
-            outboxEvent.setStatus(OutboxStatus.NEW);
-            outboxEvent.setAttempts(0);
-            outboxEvent.setNextAttemptAt(Instant.now());
-            outboxEventRepo.save(outboxEvent);
-        } catch (Exception e) {
-            log.error("Error serializing payload for outbox event: {}", e.getMessage());
-            throw new RuntimeException("Failed to serialize outbox event payload", e);
-        }
-
-        log.info("Claim #{} submitted! Outbox event stored for RabbitMQ.", claim.getClaimNumber());
+        outboxService.record(EventType.CLAIM_SUBMITTED, claim);
+        log.info("Claim #{} submitted! Outbox event recorded for asynchronous processing.", claim.getClaimNumber());
     }
 }

@@ -16,13 +16,14 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -61,26 +62,43 @@ public class OutboxRelay {
 
     private void publishEvent(OutboxEvent event, Instant now){
         String routingKey = event.getEventType().getRoutingKey();
-
         try {
             // Set 30-second lease so other workers won't pick this up
             event.setLockedUntil(now.plusSeconds(30));
             event.setStatus(OutboxStatus.PROCESSING);
 
+            CorrelationData correlationData = new CorrelationData(String.valueOf(event.getEventId()));
+
             Message message = MessageBuilder
                     .withBody(event.getPayload().getBytes(StandardCharsets.UTF_8))
                     .setContentType(MessageProperties.CONTENT_TYPE_JSON)
                     .setContentEncoding(StandardCharsets.UTF_8.name())
+                    .setHeader("eventId", event.getEventId())
+                    .setHeader("eventType", event.getEventType().name())
                     .build();
 
-            rabbitTemplate.send(exchangeEvents, routingKey, message);
+            rabbitTemplate.send(exchangeEvents, routingKey, message, correlationData);
 
-            // Mark as PUBLISHED on success
+            // Await broker publisher confirmation (correlated confirm)
+            CorrelationData.Confirm confirm = correlationData.getFuture().get(5, TimeUnit.SECONDS);
+            if (confirm == null || !confirm.isAck()) {
+                String reason = confirm != null ? confirm.getReason() : "Broker confirmation timed out";
+                throw new IllegalStateException("RabbitMQ NACK or timeout for OutboxEvent #" + event.getEventId() + ": " + reason);
+            }
+
+            // Check if broker returned message as unroutable (mandatory=true)
+            if (correlationData.getReturned() != null) {
+                throw new IllegalStateException("RabbitMQ unroutable message returned for OutboxEvent #" + event.getEventId()
+                        + " (replyCode=" + correlationData.getReturned().getReplyCode()
+                        + ", replyText=" + correlationData.getReturned().getReplyText() + ")");
+            }
+
+            // Mark as PUBLISHED only after confirmed broker ACK
             event.setStatus(OutboxStatus.PUBLISHED);
             event.setPublishedAt(Instant.now());
             event.setLockedUntil(null);
             event.setLastError(null);
-            log.info("Successfully published OutboxEvent #{} [{}] to RabbitMQ",
+            log.info("Successfully published and confirmed OutboxEvent #{} [{}] to RabbitMQ",
                     event.getEventId(), routingKey);
         }catch (Exception ex){
             int attempts = event.getAttempts()+1;
