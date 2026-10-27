@@ -290,6 +290,7 @@ public class AdminClaimServiceImpl implements AdminClaimService {
             dto.setCustomerName(c.getUser() != null && !c.getUser().isDeleted() ? c.getUser().getFullName() : "Deleted User");
             dto.setCustomerEmail(c.getUser() != null ? c.getUser().getEmail() : null);
             dto.setInvestigatorName("Not Assigned");
+            dto.setAiStatus(c.getAiStatus() != null ? c.getAiStatus().name() : (c.getFraudScore() != null ? "DONE" : "PENDING"));
             return dto;
         }).toList();
     }
@@ -343,6 +344,12 @@ public class AdminClaimServiceImpl implements AdminClaimService {
                                     claim.getAssignedInvestigator() != null
                                             ? claim.getAssignedInvestigator().getFullName()
                                             : "Not Assigned"
+                            );
+
+                            dto.setAiStatus(
+                                    claim.getAiStatus() != null
+                                            ? claim.getAiStatus().name()
+                                            : (claim.getFraudScore() != null ? "DONE" : "PENDING")
                             );
 
                             return dto;
@@ -491,6 +498,10 @@ public class AdminClaimServiceImpl implements AdminClaimService {
         User admin = currentUserService.getCurrentActiveUser();
         Claim claim = claimRepo.findByClaimIdAndTenantAndIsDeletedFalse(claimId, admin.getTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Claim not found"));
+
+        if (claim.getAiStatus() == AiStatus.RUNNING) {
+            throw new IllegalStateException("AI analysis is already running for claim " + claim.getClaimNumber());
+        }
 
         claim.setAiStatus(AiStatus.PENDING);
         claimRepo.save(claim);

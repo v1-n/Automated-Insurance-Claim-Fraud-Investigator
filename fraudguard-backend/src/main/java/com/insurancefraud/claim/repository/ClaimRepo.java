@@ -3,6 +3,7 @@ package com.insurancefraud.claim.repository;
 import com.insurancefraud.entity.Claim;
 import com.insurancefraud.entity.Tenant;
 import com.insurancefraud.entity.User;
+import com.insurancefraud.enums.AiStatus;
 import com.insurancefraud.enums.ClaimStatus;
 import com.insurancefraud.enums.FraudStatus;
 import org.springframework.data.domain.Page;
@@ -12,12 +13,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 
 @Repository
 public interface ClaimRepo extends JpaRepository<Claim, Long> {
+
+    List<Claim> findByAiStatusAndUpdatedAtBeforeAndIsDeletedFalse(AiStatus aiStatus, Instant cutoff);
     @Query(value = "SELECT nextval('claim_number_seq')", nativeQuery = true)
     Long getNextSequenceValue();
 

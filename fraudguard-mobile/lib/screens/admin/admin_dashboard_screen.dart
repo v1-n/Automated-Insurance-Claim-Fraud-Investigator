@@ -403,7 +403,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildClaimCard(BuildContext context, ClaimModel claim, VoidCallback onTap) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final statusColor = AppTheme.getStatusColor(claim.status);
-    final riskColor = AppTheme.getRiskColor(claim.fraudScore);
+    final Color riskColor;
+    final String riskText;
+    if (claim.aiStatus == 'PENDING' || claim.aiStatus == 'RUNNING') {
+      riskColor = const Color(0xFFF59E0B);
+      riskText = 'Analysing...';
+    } else if (claim.aiStatus == 'FAILED') {
+      riskColor = const Color(0xFF64748B);
+      riskText = 'Unavailable';
+    } else {
+      riskColor = AppTheme.getRiskColor(claim.fraudScore);
+      riskText = '${claim.fraudScore.toInt()}%';
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -512,7 +523,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${claim.fraudScore.toInt()}%',
+                            riskText,
                             style: TextStyle(
                               color: riskColor,
                               fontSize: 11,

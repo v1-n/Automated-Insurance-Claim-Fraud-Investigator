@@ -223,10 +223,20 @@ class _InvestigatorClaimsScreenState extends State<InvestigatorClaimsScreen> {
                               itemBuilder: (context, idx) {
                                 final claim = filteredClaims[idx];
                                 final statusColor = AppTheme.getStatusColor(claim.status);
-                                final fraudColor = AppTheme.getRiskColor(claim.fraudScore);
-                                final fraudText = claim.fraudStatus != null && claim.fraudStatus != 'PENDING_ANALYSIS'
-                                    ? '${claim.fraudScore.toInt()}% ${claim.fraudStatus}'
-                                    : '${claim.fraudScore.toInt()}% RISK';
+                                final Color fraudColor;
+                                final String fraudText;
+                                if (claim.aiStatus == 'PENDING' || claim.aiStatus == 'RUNNING') {
+                                  fraudColor = const Color(0xFFF59E0B);
+                                  fraudText = 'Analysing...';
+                                } else if (claim.aiStatus == 'FAILED') {
+                                  fraudColor = const Color(0xFF64748B);
+                                  fraudText = 'Unavailable';
+                                } else {
+                                  fraudColor = AppTheme.getRiskColor(claim.fraudScore);
+                                  fraudText = claim.fraudStatus != null && claim.fraudStatus != 'PENDING_ANALYSIS'
+                                      ? '${claim.fraudScore.toInt()}% ${claim.fraudStatus}'
+                                      : '${claim.fraudScore.toInt()}% RISK';
+                                }
 
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 12),

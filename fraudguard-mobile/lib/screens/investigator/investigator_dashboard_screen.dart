@@ -51,7 +51,13 @@ class _InvestigatorDashboardScreenState extends State<InvestigatorDashboardScree
     }
   }
 
-  Color _getFraudStatusColor(String? status, double score) {
+  Color _getFraudStatusColor(String? aiStatus, String? status, double score) {
+    if (aiStatus == 'PENDING' || aiStatus == 'RUNNING') {
+      return const Color(0xFFF59E0B);
+    }
+    if (aiStatus == 'FAILED') {
+      return const Color(0xFF64748B);
+    }
     if (status == null) return AppTheme.getRiskColor(score);
     switch (status.toUpperCase()) {
       case 'CLEAR':
@@ -65,7 +71,13 @@ class _InvestigatorDashboardScreenState extends State<InvestigatorDashboardScree
     }
   }
 
-  String _getFraudStatusText(String? status, double score) {
+  String _getFraudStatusText(String? aiStatus, String? status, double score) {
+    if (aiStatus == 'PENDING' || aiStatus == 'RUNNING') {
+      return 'Analysing...';
+    }
+    if (aiStatus == 'FAILED') {
+      return 'Unavailable';
+    }
     final pct = score.toInt();
     if (status == null) return '$pct% PENDING';
     switch (status.toUpperCase()) {
@@ -269,8 +281,8 @@ class _InvestigatorDashboardScreenState extends State<InvestigatorDashboardScree
                   (context, index) {
                     final claim = displayClaims[index];
                     final statusColor = AppTheme.getStatusColor(claim.status);
-                    final fraudColor = _getFraudStatusColor(claim.fraudStatus, claim.fraudScore);
-                    final fraudText = _getFraudStatusText(claim.fraudStatus, claim.fraudScore);
+                    final fraudColor = _getFraudStatusColor(claim.aiStatus, claim.fraudStatus, claim.fraudScore);
+                    final fraudText = _getFraudStatusText(claim.aiStatus, claim.fraudStatus, claim.fraudScore);
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),

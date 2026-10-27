@@ -10,6 +10,8 @@ import com.insurancefraud.enums.AiStatus;
 import com.insurancefraud.fraud.dto.AnalyzeClaimResponseDto;
 import com.insurancefraud.fraud.dto.PhotoHashResultDto;
 import com.insurancefraud.fraud.repository.ClaimEvidenceFlagRepo;
+import com.insurancefraud.enums.EventType;
+import com.insurancefraud.outbox.service.OutboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class AnalysisResultWriter {
     private final ClaimRepo claimRepo;
     private final ClaimDocumentRepo claimDocumentRepo;
     private final ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
+    private final OutboxService outboxService;
 
     @Transactional
     public void persistResults(Long claimId, AnalyzeClaimResponseDto response) {
@@ -76,6 +79,8 @@ public class AnalysisResultWriter {
             }).toList();
             claimEvidenceFlagRepo.saveAll(flagEntities);
         }
+
+        outboxService.record(EventType.AI_ANALYSIS_READY, claim);
 
         log.info("Successfully persisted AI analysis for Claim #{} (Score: {}, Recommendation: {}, Status: DONE)",
                 claim.getClaimNumber(), response.getRisk_score(), response.getRecommendation());

@@ -26,5 +26,7 @@ public interface ClaimAnalysisRunRepo extends JpaRepository<ClaimAnalysisRun, Lo
 
     Optional<ClaimAnalysisRun> findByClaim_ClaimIdAndRunVersion(Long claimId, Integer runVersion);
 
+    Optional<ClaimAnalysisRun> findFirstByClaim_ClaimIdAndStatusOrderByRunIdDesc(Long claimId, AnalysisRunStatus status);
+
     List<ClaimAnalysisRun> findByClaim_ClaimIdOrderByRunVersionDesc(Long claimId);
 }

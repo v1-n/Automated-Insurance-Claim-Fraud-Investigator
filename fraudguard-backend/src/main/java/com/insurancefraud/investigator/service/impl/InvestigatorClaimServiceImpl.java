@@ -91,7 +91,10 @@ public class InvestigatorClaimServiceImpl implements InvestigatorClaimService {
                                         claim.getIncidentCity(),
                                         claim.getUser().isDeleted()
                                                 ? "Deleted User"
-                                                : claim.getUser().getFullName()
+                                                : claim.getUser().getFullName(),
+                                        claim.getAiStatus() != null
+                                                ? claim.getAiStatus().name()
+                                                : (claim.getFraudScore() != null ? "DONE" : "PENDING")
                                 )
                         )
                         .toList();

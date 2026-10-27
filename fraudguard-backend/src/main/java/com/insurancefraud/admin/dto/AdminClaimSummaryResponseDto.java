@@ -32,4 +32,5 @@ public class AdminClaimSummaryResponseDto {
     private String incidentCity;
     private String decisionNotes;
     private Instant createdAt;
+    private String aiStatus;
 }

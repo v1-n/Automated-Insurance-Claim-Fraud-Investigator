@@ -28,4 +28,5 @@ public class InvestigatorClaimResponseDto {
     private Instant incidentDate;
     private String incidentCity;
     private String customerName;
+    private String aiStatus;
 }
