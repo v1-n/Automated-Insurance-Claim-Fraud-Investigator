@@ -115,7 +115,9 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
 
         // 2. Fetch Associated Policy directly from the claim
         Policy policy = claim.getPolicy();
-        if (policy == null) {
+        if (policy != null && policy.getPolicyId() != null) {
+            policy = policyRepo.findById(policy.getPolicyId()).orElse(policy);
+        } else if (policy == null) {
             policy = policyRepo.findFirstByUserAndPolicyStatusOrderByCreatedAtDesc(claim.getUser(), PolicyStatus.ACTIVE)
                     .orElseThrow(() -> new ResourceNotFoundException("Active Policy not found for claim ID: " + claimId));
         }

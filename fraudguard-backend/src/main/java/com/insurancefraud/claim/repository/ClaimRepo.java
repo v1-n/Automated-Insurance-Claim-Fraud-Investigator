@@ -26,7 +26,7 @@ public interface ClaimRepo extends JpaRepository<Claim, Long> {
     @EntityGraph(attributePaths = {"tenant"})
     Optional<Claim>  findByUserAndClaimIdAndIsDeletedFalse(User user, Long claimId);
 
-    @EntityGraph(attributePaths = {"tenant"})
+    @EntityGraph(attributePaths = {"tenant", "policy", "user"})
     Optional<Claim> findByClaimIdAndIsDeletedFalse(Long claimId);
 
     Long countByAssignedInvestigatorAndClaimStatusNotAndIsDeletedFalse(
