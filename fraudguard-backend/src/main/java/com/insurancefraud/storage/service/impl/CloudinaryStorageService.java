@@ -34,12 +34,21 @@ public class CloudinaryStorageService implements StorageService {
         log.info("Uploading file '{}' to Cloudinary for claim '{}'...",
                 file.getOriginalFilename(), claim.getClaimNumber());
 
+        String tenantCode = "DEFAULT";
+        if (claim.getTenant() != null) {
+            try {
+                tenantCode = claim.getTenant().getTenantCode();
+            } catch (Exception e) {
+                log.warn("Could not fetch tenant code for claim {}, using fallback 'DEFAULT': {}", claim.getClaimNumber(), e.getMessage());
+            }
+        }
+
         Map<?, ?> uploadResult = cloudinary.uploader().upload(
                 file.getBytes(),
                 ObjectUtils.asMap(
                         "folder",
                         "insurance-fraud/"
-                                + claim.getTenant().getTenantCode()
+                                + tenantCode
                                 + "/"
                                 + claim.getClaimNumber(),
                         "resource_type", "auto"

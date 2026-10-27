@@ -7,6 +7,7 @@ import com.insurancefraud.enums.ClaimStatus;
 import com.insurancefraud.enums.FraudStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -22,8 +23,10 @@ public interface ClaimRepo extends JpaRepository<Claim, Long> {
 
     Page<Claim> findByUserAndIsDeletedFalse(User user, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"tenant"})
     Optional<Claim>  findByUserAndClaimIdAndIsDeletedFalse(User user, Long claimId);
 
+    @EntityGraph(attributePaths = {"tenant"})
     Optional<Claim> findByClaimIdAndIsDeletedFalse(Long claimId);
 
     Long countByAssignedInvestigatorAndClaimStatusNotAndIsDeletedFalse(
@@ -61,5 +64,6 @@ public interface ClaimRepo extends JpaRepository<Claim, Long> {
 
     Optional<Claim> findByClaimIdAndAssignedInvestigatorAndIsDeletedFalse(Long claimId, User investigator);
 
-    Optional<Claim> findByUserAndClaimIdAndTenantAndIsDeletedFalse(User user, Long claimId,Tenant tenant);
+    @EntityGraph(attributePaths = {"tenant"})
+    Optional<Claim> findByUserAndClaimIdAndTenantAndIsDeletedFalse(User user, Long claimId, Tenant tenant);
 }

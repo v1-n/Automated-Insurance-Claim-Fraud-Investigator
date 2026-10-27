@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../services/document_service.dart';
 import '../../theme/app_theme.dart';
+import '../../core/utils/image_compressor.dart';
 
 class PickedDocument {
   final String filePath;
@@ -54,7 +55,6 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
 
   Future<void> _captureFromCamera() async {
     try {
-      // Downsample and compress to ~400KB while preserving sharp OCR & visual detail
       final XFile? photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1920,
@@ -62,8 +62,9 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
         imageQuality: 80,
       );
       if (photo != null) {
+        final compressed = await ImageCompressor.compressIfNeeded(File(photo.path));
         setState(() {
-          _selectedFiles.add(File(photo.path));
+          _selectedFiles.add(compressed);
         });
       }
     } catch (e) {
@@ -73,18 +74,18 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
 
   Future<void> _pickGalleryImages() async {
     try {
-      // Pick multiple compressed images from gallery
       final List<XFile> photos = await _imagePicker.pickMultiImage(
         maxWidth: 1920,
         maxHeight: 1080,
         imageQuality: 80,
       );
       if (photos.isNotEmpty) {
-        setState(() {
-          for (var photo in photos) {
-            _selectedFiles.add(File(photo.path));
-          }
-        });
+        for (var photo in photos) {
+          final compressed = await ImageCompressor.compressIfNeeded(File(photo.path));
+          setState(() {
+            _selectedFiles.add(compressed);
+          });
+        }
       }
     } catch (e) {
       _showSnackBar('Failed to pick photos: $e', AppTheme.dangerRed);
@@ -100,15 +101,19 @@ class _DocumentUploadSheetState extends State<DocumentUploadSheet> {
       );
 
       if (result != null) {
-        for (var file in result.files) {
-          final double sizeInMb = file.size / (1024 * 1024);
-          if (file.size > 10 * 1024 * 1024) {
-            _showFileSizeAlert(file.name, sizeInMb);
-            continue;
-          }
-          if (file.path != null) {
+        for (var picked in result.files) {
+          if (picked.path != null) {
+            File file = File(picked.path!);
+            // If it's an image, downsample and compress it
+            file = await ImageCompressor.compressIfNeeded(file);
+
+            final double sizeInMb = (await file.length()) / (1024 * 1024);
+            if (sizeInMb > 10.0) {
+              _showFileSizeAlert(picked.name, sizeInMb);
+              continue;
+            }
             setState(() {
-              _selectedFiles.add(File(file.path!));
+              _selectedFiles.add(file);
             });
           }
         }

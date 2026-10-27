@@ -37,7 +37,7 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
     private final PolicyRepo policyRepo;
     private final ClaimEvidenceFlagRepo claimEvidenceFlagRepo;
     private final CurrentUserService currentUserService;
-
+    private final AnalysisResultWriter analysisResultWriter;
 
     @Override
     public AnalyzeClaimResponseDto analyzeClaimAsync(Long claimId) {
@@ -46,8 +46,8 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
         // HTTP call happens outside any DB transaction
         AnalyzeClaimResponseDto response = aiAnalysisClient.dispatchToAi(requestDto);
 
-        // Only this quick write is transactional
-        persistResultsTransactional(claimId, response);
+        // Proxied transactional write via separate bean
+        analysisResultWriter.persistResults(claimId, response);
         return response;
     }
 
@@ -103,63 +103,4 @@ public class FraudAnalysisServiceImpl implements FraudAnalysisService {
         requestDto.setPhotos(photos);
         return requestDto;
     }
-
-    @Transactional
-    public void persistResultsTransactional(Long claimId, AnalyzeClaimResponseDto response) {
-        Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
-                .orElseThrow(() -> new ResourceNotFoundException("Claim not found with ID: " + claimId));
-
-        List<ClaimDocument> allDocs = claimDocumentRepo.findByClaim_ClaimIdAndIsDeletedFalse(claimId);
-
-        claim.setFraudScore(BigDecimal.valueOf(response.getRisk_score()));
-
-        if (response.getRisk_score() < 25) {
-            claim.setFraudStatus(FraudStatus.CLEAR);
-        } else if (response.getRisk_score() >= 60) {
-            claim.setFraudStatus(FraudStatus.SUSPECTED);
-        } else {
-            claim.setFraudStatus(FraudStatus.SUSPECTED);
-        }
-
-        claim.setAiRecommendation(response.getRecommendation());
-        claim.setAiRiskLevel(response.getRisk_level() != null ? response.getRisk_level().name() : null);
-        claim.setAiSummary(response.getSummary());
-        claimRepo.save(claim);
-
-        // Save computed pHashes back to ClaimDocuments
-        if (response.getDetails() != null && response.getDetails().getPhotoHashes() != null) {
-            for (PhotoHashResultDto hashDto : response.getDetails().getPhotoHashes()) {
-                allDocs.stream()
-                        .filter(d -> d.getClaimDocId().equals(hashDto.getClaimDocId()))
-                        .findFirst()
-                        .ifPresent(doc -> {
-                            doc.setPhash(hashDto.getPhash());
-                            claimDocumentRepo.save(doc);
-                        });
-            }
-        }
-
-        // Save evidence flags
-        claimEvidenceFlagRepo.deleteByClaim_ClaimId(claim.getClaimId());
-        if (response.getFlags() != null) {
-            List<ClaimEvidenceFlag> flagEntities = response.getFlags().stream().map(f -> {
-                ClaimEvidenceFlag entity = new ClaimEvidenceFlag();
-                entity.setClaim(claim);
-                entity.setFlagId(f.getFlagId());
-                entity.setCode(f.getCode());
-                entity.setCategory(f.getCategory());
-                entity.setSeverity(f.getSeverity());
-                entity.setSource(f.getSource());
-                entity.setExplanation(f.getExplanation());
-                entity.setConfidence(f.getConfidence());
-                return entity;
-            }).toList();
-            claimEvidenceFlagRepo.saveAll(flagEntities);
-        }
-
-        log.info("Successfully persisted AI analysis for Claim #{} (Score: {}, Recommendation: {})",
-                claim.getClaimNumber(), response.getRisk_score(), response.getRecommendation());
-
-    }
-
 }

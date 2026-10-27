@@ -39,45 +39,28 @@ public class ClaimDocumentServiceImpl implements ClaimDocumentService {
     private final ClaimRepo claimRepo;
     private final ClaimDocumentRepo claimDocumentRepo;
     private final ModelMapper mapper;
-    private  StoredFileResult storedFileResult;
+    private final ClaimDocumentWriter claimDocumentWriter;
 
-
-    @Transactional
     @Override
     public ClaimDocumentsResponseDto uploadClaimDocument(Long claimId, MultipartFile file, DocumentType documentType) {
         validateFile(file);
         User user = currentUserService.getCurrentActiveUser();
-        Claim claim = claimRepo.findByClaimIdAndIsDeletedFalse(claimId)
-                .orElseThrow(() -> new ResourceNotFoundException("Claim not found"));
+        
+        // Ownership and tenant validation
+        Claim claim = claimRepo.findByUserAndClaimIdAndTenantAndIsDeletedFalse(user, claimId, user.getTenant())
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found or access denied"));
 
-        if (!claim.getUser().getUserId().equals(user.getUserId())) {
-            throw new UnauthorizedException("You cannot upload documents to this claim");
-        }
-        try{
-            storedFileResult= storageService.storeFile(file, claim);
+        // Slow network upload happens outside any DB transaction
+        StoredFileResult storedFileResult;
+        try {
+            storedFileResult = storageService.storeFile(file, claim);
         } catch (IOException e) {
             log.error("File upload failed: {}", e.getMessage());
             throw new FileStorageException("Failed to store file", e);
         }
-        ClaimDocument claimDocument = new ClaimDocument();
-        claimDocument.setTenant(user.getTenant());
-        claimDocument.setClaim(claim);
-        claimDocument.setUploadedBy(user);
-        claimDocument.setDocumentType(documentType);
-        claimDocument.setFileName(storedFileResult.getStorageKey());
-        claimDocument.setOriginalFileName(storedFileResult.getOriginalName());
-        claimDocument.setFileUrl(storedFileResult.getFileUrl());
-        claimDocument.setStorageProvider(storedFileResult.getProvider());
-        claimDocument.setMimeType(storedFileResult.getMimeType());
-        claimDocument.setFileSize(storedFileResult.getFileSize());
-        claimDocument.setDocumentStatus(DocumentStatus.ACTIVE);
-        claimDocument = claimDocumentRepo.save(claimDocument);
-        log.info("Document uploaded successfully for claim {}", claim.getClaimNumber());
 
-        return mapper.map(
-                claimDocument,
-                ClaimDocumentsResponseDto.class
-        );
+        // Fast isolated transactional write
+        return claimDocumentWriter.saveDocumentRecord(claim, user, storedFileResult, documentType);
     }
 
     @Override
@@ -86,13 +69,8 @@ public class ClaimDocumentServiceImpl implements ClaimDocumentService {
 
         User user = currentUserService.getCurrentActiveUser();
 
-        Claim claim =
-                claimRepo.findByClaimIdAndIsDeletedFalse(claimId).orElseThrow(() ->
-                                new ResourceNotFoundException("Claim not found with ID: " + claimId));
-
-        if (!claim.getUser().getUserId().equals(user.getUserId())) {
-            throw new UnauthorizedException("You cannot access documents for this claim");
-        }
+        Claim claim = claimRepo.findByUserAndClaimIdAndTenantAndIsDeletedFalse(user, claimId, user.getTenant())
+                .orElseThrow(() -> new ResourceNotFoundException("Claim not found or access denied"));
 
         log.info("Retrieving documents for claim {}", claim.getClaimNumber());
         List<ClaimDocument> claimDocuments = claimDocumentRepo.findByClaim_ClaimIdAndIsDeletedFalse(claimId);

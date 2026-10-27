@@ -234,5 +234,141 @@
 
 ---
 
+### Q23: Why does calling a `@Transactional` method from another method in the same class fail to start a database transaction (Spring AOP Proxy Bypass)?
+* **Interviewer Angle**: Spring AOP mechanics, dynamic proxies (CGLIB / JDK Dynamic Proxies), transaction interceptor lifecycle, and architectural workarounds.
+* **Elevator Pitch**:
+  > *"In Spring Boot, declarative transaction management is powered by **AOP (Aspect-Oriented Programming) Proxies**. When another bean calls a `@Transactional` method on `FraudAnalysisServiceImpl`, the invocation actually passes through a generated proxy wrapper that intercepts the call, starts or joins a transaction via `PlatformTransactionManager`, and commits or rolls back upon completion.*
+  > *However, if a non-transactional method (e.g., `analyzeClaim()`) calls a transactional method in the **exact same class** via `this.persistResultsTransactional(...)`, the call is an internal Java `this` reference. It completely bypasses the Spring proxy and calls the raw target method directly.*
+  > *As a consequence, the code inside `persistResultsTransactional()` runs with **zero active transaction**. If multiple repository operations (e.g., deleting previous flags and inserting new flags) are executed, they are either executed in auto-commit mode or fail midway without rollback, leaving the database in a corrupted partial state.*
+  > *The clean architectural solution is **Bean Extraction**: move the transactional write logic into a dedicated, single-responsibility helper bean (e.g., `AnalysisResultWriter` or `ClaimDocumentWriter`) and inject it into the caller service. Every invocation then passes through Spring's proxy, ensuring strict ACID isolation without holding connections during slow external calls."*
+
+---
+
+### Q24: What is the concurrency risk of declaring instance fields in a Spring `@Service` or `@Component` bean?
+* **Interviewer Angle**: Spring bean scopes (Singleton vs Prototype), thread safety, multi-threaded request processing, and servlet container thread pools (Tomcat/Hikari).
+* **Elevator Pitch**:
+  > *"By default, all Spring `@Service`, `@Component`, and `@RestController` beans are **singletons**—a single instance is created by the Spring `ApplicationContext` and shared across every concurrent worker thread in Tomcat.*
+  > *If a developer declares a mutable instance variable (for example, `private StoredFileResult storedFileResult;` inside `ClaimDocumentServiceImpl`), that field is stored on the heap and shared across all concurrent HTTP requests.*
+  > *If User A and User B upload documents concurrently:*
+  > *1. User A's thread assigns `this.storedFileResult = resultA`.*
+  > *2. User B's thread context-switches in and assigns `this.storedFileResult = resultB` before User A finishes saving.*
+  > *3. User A's thread resumes and reads `this.storedFileResult`—saving User B's Cloudinary storage key and URL into User A's database record.*
+  > *This results in severe data corruption and cross-tenant data leakage.*
+  > *The rule in Spring applications: **Beans must remain stateless**. All request-scoped data must be maintained in method-local variables (stack memory) or passed explicitly as method arguments, ensuring complete thread isolation."*
+
+---
+
+### Q25: Why did messages sent to a Dead Letter Exchange (DLX) silently disappear, and why are RabbitMQ Queue arguments immutable?
+* **Interviewer Angle**: RabbitMQ internals, AMQP protocol specifications, Dead Lettering mechanics, and migration patterns for live queue parameters.
+* **Elevator Pitch**:
+  > *"When configuring Dead Lettering in RabbitMQ, specifying only `x-dead-letter-exchange` causes RabbitMQ to republish dead-lettered messages to the DLX using the message's **original routing key** (e.g., `claim.submitted`).*
+  > *If the Dead Letter Queue (DLQ) is bound to the DLX with a specific error routing key (such as `fraudguard.claim.analysis.dlq`), RabbitMQ cannot find a matching binding for `claim.submitted` on the DLX. Under AMQP protocol rules, unroutable messages on an exchange without an alternate exchange are **silently dropped and lost forever**.*
+  > *The fix requires configuring the queue with `x-dead-letter-routing-key` pointing explicitly to `queue + ".dlq"`.*
+  > *However, RabbitMQ enforces **Queue Argument Immutability**: once a queue is declared with an argument map, AMQP clients cannot alter its arguments (`x-dead-letter-routing-key`, `x-max-length`, `x-queue-type`). If an application redeploys with modified arguments, RabbitMQ raises `406 PRECONDITION_FAILED`.*
+  > *To resolve this without downtime in production, developers either:*
+  > *1. Use a **Blue-Green queue migration** (declare `fraudguard.claim.analysis.v2`, route new events to v2, drain v1, then delete v1).*
+  > *2. In development/staging, delete the empty queue via the RabbitMQ Management HTTP API or CLI and let Spring AMQP re-declare it with the new configuration on boot."*
+
+---
+
+### Q26: Why should AI Fraud Detection systems be strictly Advisory rather than autonomously overwriting human claim verdicts?
+* **Interviewer Angle**: Human-in-the-loop (HITL) system design, automated decision audits, false positive blast radius, and insurance compliance regulations.
+* **Elevator Pitch**:
+  > *"In production insurance claim systems, an automated AI microservice should never directly mutate human investigator fields (such as `claim.fraudStatus = CLEAR` or `APPROVED`).*
+  > *If the AI pipeline autonomously marks a claim as `CLEAR` or `APPROVED`:*
+  > *1. A false negative (e.g., subtle digital image doctoring that bypassed perceptual hashing) results in an irreversible unauthorized financial payout.*
+  > *2. Conversely, a false positive (e.g., camera EXIF stripped by a chat app like WhatsApp) could unlawfully reject or accuse an honest claimant, violating regulatory fair-claims directives (e.g., IRDAI / state insurance commissioners).*
+  > *3. It breaks the audit trail: when an investigator opens a claim, they cannot distinguish whether the verdict was made by an accredited human officer or an automated computer-vision heuristic.*
+  > *In FraudGuard, we enforce a strict **Advisory Architecture**:*
+  > *- The AI pipeline populates metadata fields: `fraudScore` (0-100), `aiRecommendation` (`FAST_TRACK`, `REVIEW`, `INVESTIGATE`), `aiRiskLevel`, `aiSummary`, and granular `ClaimEvidenceFlags`.*
+  > *- The operational `fraudStatus` (e.g., `PENDING_ANALYSIS`, `UNDER_INVESTIGATION`, `RESOLVED`) and `claimStatus` remain strictly owned and updated by authenticated human investigators, preserving compliance and human-in-the-loop oversight."*
+
+---
+
+### Q27: When should you use `@Transactional` and when must you NOT use it in Spring Boot? (The 5 Golden Rules of Transaction Boundaries)
+* **Interviewer Angle**: Transaction boundaries, connection pool lifecycle (HikariCP), ACID semantics vs distributed side effects, and architectural anti-patterns.
+* **Elevator Pitch**:
+  > *"A common mistake in Spring Boot is treating `@Transactional` as a generic safety blanket placed at the top of every service method. In high-throughput distributed systems, misplaced transactions cause severe performance collapse, connection starvation, and phantom rollbacks.*
+  > *Here are the 5 architectural rules governing when to apply and when to avoid `@Transactional`:*
+
+#### Rule 1: DO NOT use `@Transactional` around External Network & I/O Calls (The HikariCP Starvation Anti-Pattern)
+* **Anti-Pattern**: Putting `@Transactional` on an orchestrator method that calls an AI microservice, uploads a file to S3/Cloudinary, or calls a payment gateway.
+* **Why**: Spring's `TransactionInterceptor` borrows a physical JDBC connection from HikariCP **before** the method body begins. If that method waits 10 to 30 seconds for an AI response or Cloudinary upload, the physical DB connection sits completely idle and blocked.
+* **Consequence**: Default HikariCP pool size is 10. Just 10 concurrent requests will exhaust the pool, causing all other incoming APIs (user login, policy viewing, health checks) to freeze with `CannotGetJdbcConnectionException: Connection is not available, request timed out after 30000ms`.
+* **Fix**: Apply the **Read → Remote I/O → Write** pattern. Execute external I/O outside any transaction, then delegate DB writes to a dedicated transactional writer bean (`ClaimDocumentWriter`, `AnalysisResultWriter`) that holds a DB connection for only 10–15 milliseconds.
+* **The Follow-Up Trap (`LazyInitializationException`)**: When you remove `@Transactional` from the outer method, Hibernate closes its `Session` as soon as the initial repository query returns. If your external I/O logic subsequently reads an uninitialized `LAZY` relation (such as `claim.getTenant().getTenantCode()` for Cloudinary folder paths), Hibernate throws `LazyInitializationException: Could not initialize proxy - no session`.
+  * **Solution**: Eagerly fetch the necessary association at the repository layer using Spring Data JPA's `@EntityGraph(attributePaths = {"tenant"})` or a `JOIN FETCH` query. This populates the entity in a single SQL query so it remains safely accessible in memory long after the Hibernate session has closed.
+
+#### Rule 2: DO NOT assume `@Transactional` can rollback External Side Effects
+* **Anti-Pattern**: Placing `@Transactional` on a method thinking: *"If the AI service or email sender fails later, the transaction will undo everything."*
+* **Why**: Database transactions only rollback **SQL mutations executed against that database**. A database rollback **cannot**:
+  * Un-send an HTTP POST request already received by another server.
+  * Delete a file already uploaded to Cloudinary/S3.
+  * Recall an email or SMS sent via SMTP/Twilio.
+* **Furthermore**: If an external call fails **before** any SQL writes occur (like `analyzeClaimAsync()` failing at `dispatchToAi()`), **there is literally zero database data to roll back**. Holding a transaction open for it was completely pointless.
+
+#### Rule 3: DO use `@Transactional` on Multiple Atomic SQL Writes (All-or-Nothing ACID Guarantee)
+* **When to Use**: Whenever two or more database write operations must succeed or fail together.
+* **Examples in FraudGuard**:
+  1. **Claim Submission & Outbox Pattern**:
+     ```java
+     claim.setSubmittedAt(Instant.now());
+     claim.setFraudStatus(FraudStatus.PENDING_ANALYSIS);
+     claimRepo.save(claim);
+     outboxEventRepo.save(outboxEvent); // MUST commit together!
+     ```
+     If the Outbox event fails to insert, the claim status must roll back to `DRAFT/PENDING` so an untracked ghost claim is never created.
+  2. **Persisting Analysis Results (`AnalysisResultWriter`)**:
+     Updating the claim risk score, updating document pHashes, deleting previous evidence flags, and saving new evidence flags must all commit together in one atomic batch.
+
+#### Rule 4: DO NOT use `@Transactional` on Single-Table Reads (Use `@Transactional(readOnly = true)` Only When Needed)
+* **Anti-Pattern**: Adding `@Transactional` to simple repository reads like `findById()` or `findByUserAndIsDeletedFalse()`.
+* **Why**: Every transaction incurs proxy interception, transaction manager thread-local context allocation, connection acquisition, and commit/rollback overhead.
+* **When `readOnly = true` IS beneficial**:
+  * Complex multi-table read operations requiring repeatable reads (Isolation level consistency).
+  * Preventing Hibernate dirty checking overhead: Hibernate flushes its persistence context snapshot during commit unless `readOnly = true` instructs it to skip dirty checks.
+  * Large queries initializing `LAZY` collections across multiple entities within the same session.
+
+#### Rule 5: Watch out for Spring AOP Proxy Bypass (Self-Invocation)
+* **Anti-Pattern**: Calling `@Transactional public void helperWrite()` from `public void orchestrator()` within the same class (`this.helperWrite()`).
+* **Why**: Spring applies transaction interception via dynamic CGLIB/JDK proxies. Direct `this.` calls bypass the proxy wrapper, executing the method in raw Java with **zero transaction**, ignoring the annotation completely.
+* **Fix**: Extract the write logic into an independent Spring bean (`AnalysisResultWriter`) and inject it.
+
+---
+
+### Q28: What is the `ObjectNode#setAll` Jackson Deserialization Trap in RabbitMQ Consumers, and how do you achieve header-agnostic messaging?
+* **Interviewer Angle**: Spring AMQP message conversion lifecycle, Jackson 3.x tree AST deserialization bugs, `__TypeId__` header poisoning, and raw AMQP messaging patterns.
+* **Elevator Pitch**:
+  > *"When using Spring AMQP's `JacksonJsonMessageConverter`, passing a `JsonNode` (e.g. `objectMapper.readTree(payload)`) directly to `rabbitTemplate.convertAndSend()` causes the converter to automatically inject a message header: `__TypeId__ = com.fasterxml.jackson.databind.node.ObjectNode`.*
+  > *When a `@RabbitListener` consumer attempts to receive this message via `@RabbitListener public void consume(JsonNode payload)` or via Jackson-managed parameter conversion, Jackson attempts to instantiate `com.fasterxml.jackson.databind.node.ObjectNode` through reflection.*
+  > *In Jackson 2.15+ and Jackson 3.x, this throws an instant fatal exception:*
+  > *`InvalidDefinitionException: Conflicting setter definitions for property "all": ObjectNode#setAll(ObjectNode) vs ObjectNode#setAll(Map)`.*
+  > *Because `ObjectNode` is an internal AST node rather than a standard JavaBean, Jackson fails to resolve its overloaded setter methods.*
+  > *The clean architectural solution is **Header-Agnostic Raw AMQP Messaging**:*
+  > *1. **On the Publisher (`OutboxRelay`)**: Send raw JSON bytes using Spring's `MessageBuilder`:*
+  >    ```java
+  >    Message message = MessageBuilder
+  >        .withBody(event.getPayload().getBytes(StandardCharsets.UTF_8))
+  >        .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+  >        .setContentEncoding("UTF-8")
+  >        .build();
+  >    rabbitTemplate.send(exchange, routingKey, message);
+  >    ```
+  >    *This bypasses Jackson's automatic type stamping and avoids publishing misleading `__TypeId__` metadata.*
+  > *2. **On the Consumer (`ClaimAnalysisConsumer`)**: Accept `org.springframework.amqp.core.Message message`:*
+  >    ```java
+  >    @RabbitListener(queues = "${rabbitmq.queue.claim.analysis}")
+  >    public void consume(Message message) {
+  >        String payload = new String(message.getBody(), StandardCharsets.UTF_8);
+  >        JsonNode jsonNode = objectMapper.readTree(payload);
+  >        Long claimId = jsonNode.get("claimId").asLong();
+  >        ...
+  >    ```
+  >    *When the listener takes `org.springframework.amqp.core.Message`, Spring AMQP bypasses parameter conversion completely. The listener extracts raw bytes, parses them via `objectMapper.readTree()`, and remains completely immune to Jackson proxy or setter conflicts."*
+
+---
+
 *(This document is actively maintained as new architectural components are implemented in FraudGuard.)*
+
+
 

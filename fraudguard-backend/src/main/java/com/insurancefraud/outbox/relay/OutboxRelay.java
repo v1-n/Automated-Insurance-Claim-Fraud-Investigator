@@ -9,6 +9,9 @@ import com.insurancefraud.outbox.repository.OutboxEventRepo;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -63,8 +67,13 @@ public class OutboxRelay {
             event.setLockedUntil(now.plusSeconds(30));
             event.setStatus(OutboxStatus.PROCESSING);
 
-            JsonNode payloadNode = objectMapper.readTree(event.getPayload());
-            rabbitTemplate.convertAndSend(exchangeEvents, routingKey, payloadNode);
+            Message message = MessageBuilder
+                    .withBody(event.getPayload().getBytes(StandardCharsets.UTF_8))
+                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                    .setContentEncoding(StandardCharsets.UTF_8.name())
+                    .build();
+
+            rabbitTemplate.send(exchangeEvents, routingKey, message);
 
             // Mark as PUBLISHED on success
             event.setStatus(OutboxStatus.PUBLISHED);
@@ -83,7 +92,7 @@ public class OutboxRelay {
 
             if(attempts>=MAX_ATTEMPTS){
                 event.setStatus(OutboxStatus.DEAD);
-                log.error("OutboxEvent #{} permanently DEAB after {} attempts. Error: {}",
+                log.error("OutboxEvent #{} permanently DEAD after {} attempts. Error: {}",
                         event.getEventId(), attempts, errorMsg);
             }else{
                 // Exponential backoff: 3^attempts seconds (3s, 9s, 27s, 81s)

@@ -30,6 +30,7 @@ public class RabbitMQConfig {
         return QueueBuilder
                 .durable(queueClaimAnalysis)
                 .deadLetterExchange(deadLetterExchange)
+                .deadLetterRoutingKey(queueClaimAnalysis + ".dlq")
                 .build();
     }
 
@@ -62,6 +63,22 @@ public class RabbitMQConfig {
                 .bind(claimAnalysisQueue())
                 .to(eventsExchange())
                 .with(routingKeyClaimAnalysis);
+    }
+
+    @Bean
+    public Binding claimDocumentAddedBinding() {
+        return BindingBuilder
+                .bind(claimAnalysisQueue())
+                .to(eventsExchange())
+                .with("claim.document.added");
+    }
+
+    @Bean
+    public Binding claimAnalysisRerunBinding() {
+        return BindingBuilder
+                .bind(claimAnalysisQueue())
+                .to(eventsExchange())
+                .with("claim.analysis.rerun");
     }
 
 
