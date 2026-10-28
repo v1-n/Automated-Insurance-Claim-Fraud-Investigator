@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../models/notification_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../theme/app_theme.dart';
+import '../admin/admin_claim_detail_screen.dart';
+import '../customer/claim_detail_screen.dart';
+import '../investigator/investigation_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -172,12 +176,52 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
           ),
         ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
         onTap: () {
           if (!notification.isRead) {
             provider.markAsRead(notification.notificationId);
           }
+          _navigateToClaimDetail(notification);
         },
       ),
+    );
+  }
+
+  void _navigateToClaimDetail(NotificationModel notification) {
+    String? claimId = notification.referenceId?.toString();
+
+    // Fallback: extract #123 from title or body if referenceId was not set
+    if (claimId == null || claimId.isEmpty) {
+      final match = RegExp(r'#(\d+)').firstMatch('${notification.title} ${notification.body}');
+      if (match != null) {
+        claimId = match.group(1);
+      }
+    }
+
+    if (claimId == null || claimId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No claim reference associated with this notification.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    Widget targetScreen;
+
+    if (auth.isInvestigator) {
+      targetScreen = InvestigationDetailScreen(claimId: claimId);
+    } else if (auth.isAdmin) {
+      targetScreen = AdminClaimDetailScreen(claimId: claimId);
+    } else {
+      targetScreen = ClaimDetailScreen(claimId: claimId);
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => targetScreen),
     );
   }
 
