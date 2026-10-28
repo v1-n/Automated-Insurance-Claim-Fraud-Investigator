@@ -7,6 +7,7 @@ import 'providers/admin_dashboard_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/customer_claims_provider.dart';
 import 'providers/investigator_claims_provider.dart';
+import 'providers/notification_provider.dart';
 import 'providers/policy_provider.dart';
 import 'providers/realtime_provider.dart';
 import 'providers/theme_provider.dart';
@@ -24,7 +25,6 @@ import 'screens/customer/submit_claim_screen.dart';
 import 'screens/investigator/investigator_claims_screen.dart';
 import 'screens/investigator/investigator_dashboard_screen.dart';
 import 'theme/app_theme.dart';
-import 'dart:developer' as developer;
 
 import 'package:google_fonts/google_fonts.dart';
 
@@ -47,6 +47,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CustomerClaimsProvider()),
         ChangeNotifierProvider(create: (_) => InvestigatorClaimsProvider()),
         ChangeNotifierProvider(create: (_) => PolicyProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: const FraudGuardApp(),
     ),

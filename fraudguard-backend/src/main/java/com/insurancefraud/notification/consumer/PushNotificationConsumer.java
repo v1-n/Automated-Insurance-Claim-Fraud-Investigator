@@ -3,10 +3,17 @@ package com.insurancefraud.notification.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.insurancefraud.entity.Notifications;
+import com.insurancefraud.entity.Tenant;
+import com.insurancefraud.entity.User;
 import com.insurancefraud.entity.UserDevice;
+import com.insurancefraud.enums.EventType;
 import com.insurancefraud.notification.service.NotificationChannel;
 import com.insurancefraud.notification.service.NotificationRecipientResolver;
+import com.insurancefraud.repository.NotificationRepo;
+import com.insurancefraud.repository.TenantRepo;
 import com.insurancefraud.repository.UserDeviceRepo;
+import com.insurancefraud.repository.UserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -25,6 +32,9 @@ public class PushNotificationConsumer {
     private final NotificationChannel notificationChannel;
     private final UserDeviceRepo userDeviceRepo;
     private final NotificationRecipientResolver recipientResolver;
+    private final NotificationRepo notificationRepo;
+    private final UserRepo userRepo;
+    private final TenantRepo tenantRepo;
 
     @RabbitListener(
             queues = "${rabbitmq.queue.notify.push}",
@@ -76,26 +86,31 @@ public class PushNotificationConsumer {
                 return;
             }
 
-            List<UserDevice> devices =
-                    userDeviceRepo
-                            .findAllByUser_UserIdAndTenant_TenantIdAndActiveTrue(
-                                    recipientId, tenantId
-                            );
+            // Extract eventId from header or JSON envelope
+            Long eventId = null;
+            Object headerEventId = message.getMessageProperties().getHeader("eventId");
+            if (headerEventId instanceof Number n) {
+                eventId = n.longValue();
+            } else if (payload.has("eventId") && !payload.get("eventId").isNull()) {
+                eventId = payload.get("eventId").asLong();
+            }
 
-            // A user without a registered device is not a delivery failure.
-            if (devices.isEmpty()) {
-                log.debug(
-                        "No active push devices for recipient {} in tenant {}",
-                        recipientId, tenantId
-                );
-                return;
+            EventType eventType = null;
+            if (payload.hasNonNull("eventType")) {
+                try {
+                    eventType = EventType.valueOf(payload.get("eventType").asText());
+                } catch (Exception ignored) {}
             }
 
             JsonNode claimNumberNode = payload.get("claimNumber");
             JsonNode claimIdNode = payload.get("claimId");
+            Long claimId = (claimIdNode != null && !claimIdNode.isNull() && claimIdNode.canConvertToLong())
+                    ? claimIdNode.longValue()
+                    : null;
+
             String claimReference = (claimNumberNode != null && !claimNumberNode.isNull() && !claimNumberNode.asText().isBlank())
                     ? "#" + claimNumberNode.asText()
-                    : (claimIdNode != null && !claimIdNode.isNull() ? "#" + claimIdNode.asText() : "your claim");
+                    : (claimId != null ? "#" + claimId : "your claim");
 
             String title;
             String body;
@@ -137,6 +152,47 @@ public class PushNotificationConsumer {
                     );
                     return;
                 }
+            }
+
+            // 1. Save In-App Notification in DB (with deduplication on eventId + recipientId)
+            try {
+                if (eventId == null || !notificationRepo.existsByEventIdAndUser_UserId(eventId, recipientId)) {
+                    User recipient = userRepo.findById(recipientId).orElse(null);
+                    Tenant tenant = tenantRepo.findById(tenantId).orElse(null);
+
+                    if (recipient != null && tenant != null) {
+                        Notifications inAppNotification = Notifications.builder()
+                                .tenant(tenant)
+                                .user(recipient)
+                                .title(title)
+                                .body(body)
+                                .eventType(eventType != null ? eventType : EventType.CLAIM_SUBMITTED)
+                                .referenceId(claimId)
+                                .eventId(eventId)
+                                .read(false)
+                                .build();
+
+                        notificationRepo.save(inAppNotification);
+                        log.info("Saved in-app notification for recipient {} [{}]", recipientId, routingKey);
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Could not save in-app notification in DB: {}", ex.getMessage());
+            }
+
+            // 2. Dispatch FCM Push Notification to registered mobile devices
+            List<UserDevice> devices =
+                    userDeviceRepo
+                            .findAllByUser_UserIdAndTenant_TenantIdAndActiveTrue(
+                                    recipientId, tenantId
+                            );
+
+            if (devices.isEmpty()) {
+                log.debug(
+                        "No active push devices for recipient {} in tenant {}. Push skipped.",
+                        recipientId, tenantId
+                );
+                return;
             }
 
             for (UserDevice device : devices) {
