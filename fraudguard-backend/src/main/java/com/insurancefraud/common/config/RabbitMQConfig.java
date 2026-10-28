@@ -22,8 +22,12 @@ public class RabbitMQConfig {
     @Value("${rabbitmq.routing.key.claim.analysis}")
     private String routingKeyClaimAnalysis;
 
+
     @Value("${rabbitmq.claim.analysis.dlx}")
     private String deadLetterExchange;
+
+    @Value("${rabbitmq.queue.notify.push}")
+    private String notifyPush;
 
     @Bean
     public Queue claimAnalysisQueue(){
@@ -31,6 +35,13 @@ public class RabbitMQConfig {
                 .durable(queueClaimAnalysis)
                 .deadLetterExchange(deadLetterExchange)
                 .deadLetterRoutingKey(queueClaimAnalysis + ".dlq")
+                .build();
+    }
+
+    @Bean
+    public Queue notifyPushQueue(){
+        return QueueBuilder
+                .durable(notifyPush)
                 .build();
     }
 
@@ -81,6 +92,29 @@ public class RabbitMQConfig {
                 .with("claim.analysis.rerun");
     }
 
+    @Bean
+    public Binding notifyPushBinding(){
+        return  BindingBuilder
+                .bind(notifyPushQueue())
+                .to(eventsExchange())
+                .with("claim.#");
+    }
+
+    @Bean
+    public Binding notifyPushAiBinding() {
+        return BindingBuilder
+                .bind(notifyPushQueue())
+                .to(eventsExchange())
+                .with("ai.#");//zero or more word
+    }
+
+    @Bean
+    public Binding notifyPushReviewBinding() {
+        return BindingBuilder
+                .bind(notifyPushQueue())
+                .to(eventsExchange())
+                .with("review.#");
+    }
 
     @Bean
     public MessageConverter messageConverter(){

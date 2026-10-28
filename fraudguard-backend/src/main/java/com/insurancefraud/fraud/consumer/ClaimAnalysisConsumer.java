@@ -27,7 +27,7 @@ public class ClaimAnalysisConsumer {
         String payloadStr = "";
         try {
             payloadStr = new String(message.getBody(), StandardCharsets.UTF_8);
-                JsonNode payload = objectMapper.readTree(payloadStr);
+            JsonNode payload = objectMapper.readTree(payloadStr);
             JsonNode claimIdNode = payload.get("claimId");
 
             if (claimIdNode == null

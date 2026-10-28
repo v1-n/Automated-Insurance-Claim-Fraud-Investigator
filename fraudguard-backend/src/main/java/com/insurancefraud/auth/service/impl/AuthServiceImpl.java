@@ -14,6 +14,7 @@ import com.insurancefraud.auth.service.AuthService;
 import com.insurancefraud.common.security.CurrentUserService;
 import com.insurancefraud.service.EmailService;
 import com.insurancefraud.service.JwtService;
+import com.insurancefraud.service.UserDeviceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
@@ -45,6 +46,7 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenRepo refreshTokenRepo;
     private final AuthenticationManager authManager;
     private final CurrentUserService currentUserService;
+    private final UserDeviceService userDeviceService;
 
     // Register User and send Verification email
     @Override
@@ -146,6 +148,7 @@ public class AuthServiceImpl implements AuthService {
         userDto.setEmail(user.getEmail());
         userDto.setAvatarUrl(user.getAvatarUrl());
 
+
         userDto.setRole(
                 user.getRole().getRoleCode().name()
         );
@@ -166,6 +169,15 @@ public class AuthServiceImpl implements AuthService {
         response.setUser(userDto);
 
         log.info("User logged in: {}", userDto.getEmail());
+
+        // Register or update the FCM device after authentication succeeds.
+        userDeviceService.registerDevice(
+                user,
+                user.getTenant(),
+                loginDto.getFcmToken(),
+                loginDto.getPlatform()
+        );
+
         return response;
     }
 

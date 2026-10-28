@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/network/api_client.dart';
 import '../models/user_model.dart';
+import '../services/fcm_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiClient _apiClient = ApiClient();
@@ -71,9 +72,22 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final fcmToken = await FcmService().getToken();
+      final platform = FcmService.getPlatform();
+
+      if (fcmToken == null || fcmToken.isEmpty) {
+        _errorMessage = 'Notification device token could not be obtained. Please grant notification permissions to log in.';
+        dev.log('[AUTH] Login blocked: FCM token is missing', name: 'AuthProvider');
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
       final data = await _apiClient.post('/auth/login', body: {
         'email': email,
         'password': password,
+        'fcmToken': fcmToken,
+        'platform': platform,
       });
 
       if (data != null) {

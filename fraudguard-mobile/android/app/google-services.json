@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "772496493595",
+    "project_id": "fraudguard-notification",
+    "storage_bucket": "fraudguard-notification.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:772496493595:android:3f9b91e603158560793cbe",
+        "android_client_info": {
+          "package_name": "com.insurancefraud.insurance_flutter_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyApMUTVriwM5EJP1uWAtDp2YnfBfGKoE3w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

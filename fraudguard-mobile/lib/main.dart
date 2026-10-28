@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/admin_claims_provider.dart';
@@ -23,13 +24,17 @@ import 'screens/customer/submit_claim_screen.dart';
 import 'screens/investigator/investigator_claims_screen.dart';
 import 'screens/investigator/investigator_dashboard_screen.dart';
 import 'theme/app_theme.dart';
+import 'dart:developer' as developer;
 
 import 'package:google_fonts/google_fonts.dart';
 
-void main() {
+import 'services/fcm_service.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Prevent google_fonts from doing synchronous network I/O on the main thread,
-  // which can cause ANR during route transitions on debug builds.
+  await Firebase.initializeApp();
+  await FcmService().initialize();
+
   GoogleFonts.config.allowRuntimeFetching = false;
   runApp(
     MultiProvider(

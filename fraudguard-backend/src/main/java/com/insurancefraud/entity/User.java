@@ -35,6 +35,12 @@ public class User {
     @Column(nullable = true,name = "avatar_url")
     private String avatarUrl;
 
+    @Column(name = "device_token", length = 512)
+    private String deviceToken;
+
+    @Column(name = "platform", length = 20)
+    private String platform; // ANDROID, IOS, WEB
+
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     private UserStatus status;
