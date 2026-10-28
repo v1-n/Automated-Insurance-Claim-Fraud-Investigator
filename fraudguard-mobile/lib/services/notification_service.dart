@@ -9,7 +9,7 @@ class NotificationService {
     int size = 20,
   }) async {
     final response = await _api.get(
-      '/api/notifications',
+      '/notifications',
       queryParams: {
         'page': page.toString(),
         'size': size.toString(),
@@ -25,7 +25,7 @@ class NotificationService {
 
   Future<int> getUnreadCount() async {
     try {
-      final response = await _api.get('/api/notifications/unread-count');
+      final response = await _api.get('/notifications/unread-count');
       if (response != null && response['unreadCount'] != null) {
         return (response['unreadCount'] as num).toInt();
       }
@@ -35,7 +35,7 @@ class NotificationService {
 
   Future<NotificationModel?> markAsRead(int notificationId) async {
     try {
-      final response = await _api.patch('/api/notifications/$notificationId/read');
+      final response = await _api.patch('/notifications/$notificationId/read');
       if (response != null) {
         return NotificationModel.fromJson(response);
       }
