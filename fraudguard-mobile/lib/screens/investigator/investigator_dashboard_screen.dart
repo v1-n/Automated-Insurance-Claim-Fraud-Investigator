@@ -6,6 +6,8 @@ import '../../providers/investigator_claims_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../theme/app_theme.dart';
 import 'investigation_detail_screen.dart';
+import '../common/notifications_screen.dart';
+import '../../providers/notification_provider.dart';
 
 class InvestigatorDashboardScreen extends StatefulWidget {
   final VoidCallback? onSeeAll;
@@ -151,36 +153,53 @@ class _InvestigatorDashboardScreenState extends State<InvestigatorDashboardScree
                           ],
                         ),
                         // Bell Notification icon with red badge
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isDark ? const Color(0xFF334155) : Colors.grey[200]!,
-                                ),
+                        Consumer<NotificationProvider>(
+                          builder: (context, notifProvider, _) {
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const NotificationsScreen(),
+                                  ),
+                                ).then((_) {
+                                  notifProvider.refreshUnreadCount();
+                                });
+                              },
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isDark ? const Color(0xFF334155) : Colors.grey[200]!,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.notifications_outlined,
+                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  if (notifProvider.unreadCount > 0)
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: AppTheme.dangerRed,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                              child: Icon(
-                                Icons.notifications_outlined,
-                                color: isDark ? Colors.white : const Color(0xFF0F172A),
-                              ),
-                            ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: AppTheme.dangerRed,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ],
                     ),

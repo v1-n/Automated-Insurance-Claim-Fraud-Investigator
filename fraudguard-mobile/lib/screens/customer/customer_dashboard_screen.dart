@@ -7,6 +7,8 @@ import '../../services/claim_service.dart';
 import '../../theme/app_theme.dart';
 import 'claim_detail_screen.dart';
 import 'submit_claim_screen.dart';
+import '../common/notifications_screen.dart';
+import '../../providers/notification_provider.dart';
 
 class CustomerDashboardScreen extends StatefulWidget {
   const CustomerDashboardScreen({super.key});
@@ -152,26 +154,44 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                         ),
                       const SizedBox(width: 10),
                       // Notification bell
-                      Stack(
-                        children: [
-                          Icon(
-                            Icons.notifications_outlined,
-                            color: isDark ? Colors.grey[300] : const Color(0xFF475569),
-                            size: 26,
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppTheme.dangerRed,
-                                shape: BoxShape.circle,
-                              ),
+                      Consumer<NotificationProvider>(
+                        builder: (context, notifProvider, _) {
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const NotificationsScreen(),
+                                ),
+                              ).then((_) {
+                                notifProvider.refreshUnreadCount();
+                              });
+                            },
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(
+                                  Icons.notifications_outlined,
+                                  color: isDark ? Colors.grey[300] : const Color(0xFF475569),
+                                  size: 26,
+                                ),
+                                if (notifProvider.unreadCount > 0)
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: AppTheme.dangerRed,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
                     ],
                   ),

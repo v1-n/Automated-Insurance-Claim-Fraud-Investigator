@@ -8,6 +8,8 @@ import '../../providers/realtime_provider.dart';
 import '../../theme/app_theme.dart';
 import 'admin_claims_screen.dart';
 import 'admin_claim_detail_screen.dart';
+import '../common/notifications_screen.dart';
+import '../../providers/notification_provider.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -72,33 +74,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 ),
                               ],
                             ),
-                            Stack(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? const Color(0xFF1E293B) : Colors.grey[200],
-                                    shape: BoxShape.circle,
+                            Consumer<NotificationProvider>(
+                              builder: (context, notifProvider, _) {
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const NotificationsScreen(),
+                                      ),
+                                    ).then((_) {
+                                      notifProvider.refreshUnreadCount();
+                                    });
+                                  },
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: isDark ? const Color(0xFF1E293B) : Colors.grey[200],
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.notifications_none_rounded,
+                                          color: isDark ? Colors.white : Colors.black,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      if (notifProvider.unreadCount > 0)
+                                        Positioned(
+                                          top: 4,
+                                          right: 4,
+                                          child: Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: const BoxDecoration(
+                                              color: AppTheme.dangerRed,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  child: Icon(
-                                    Icons.notifications_none_rounded,
-                                    color: isDark ? Colors.white : Colors.black,
-                                    size: 24,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 4,
-                                  right: 4,
-                                  child: Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: AppTheme.dangerRed,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                           ],
                         ),
