@@ -1,0 +1,25 @@
+name: Keep Render Services Awake
+
+on:
+  schedule:
+    # Runs every 10 minutes to prevent Render free-tier services from sleeping (15-minute threshold)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
+jobs:
+  keep-alive:
+    name: Ping Health Endpoints
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Spring Boot Backend
+        run: |
+          echo "Pinging Spring Boot backend health endpoint..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 60 "https://fraudguard-backend-g3e4.onrender.com/api/v1/health" || echo "TIMED_OUT")
+          echo "Spring Boot HTTP Status: $STATUS"
+
+      - name: Ping FastAPI AI Service
+        run: |
+          echo "Pinging FastAPI AI service health endpoint..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 60 "https://fraudguard-ai-service.onrender.com/health" || echo "TIMED_OUT")
+          echo "FastAPI AI Service HTTP Status: $STATUS"
