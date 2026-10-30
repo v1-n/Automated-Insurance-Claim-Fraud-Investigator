@@ -26,8 +26,6 @@ import 'screens/investigator/investigator_claims_screen.dart';
 import 'screens/investigator/investigator_dashboard_screen.dart';
 import 'theme/app_theme.dart';
 
-import 'package:google_fonts/google_fonts.dart';
-
 import 'services/fcm_service.dart';
 
 void main() async {
@@ -35,7 +33,6 @@ void main() async {
   await Firebase.initializeApp();
   await FcmService().initialize();
 
-  GoogleFonts.config.allowRuntimeFetching = false;
   runApp(
     MultiProvider(
       providers: [
