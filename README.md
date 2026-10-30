@@ -9,7 +9,7 @@
 [![Firebase](https://img.shields.io/badge/Firebase-FCM%20v1-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Download APK](https://img.shields.io/badge/Download-Android%20APK-brightgreen?logo=android&logoColor=white)](https://github.com/viveknarawade/Automated-Insurance-Claim-Fraud-Investigator/releases/latest/download/app-release.apk)
+[![Download APK](https://img.shields.io/badge/Download-Android%20APK%20(v1.1.0)-brightgreen?logo=android&logoColor=white)](https://github.com/v1-n/Automated-Insurance-Claim-Fraud-Investigator/releases/download/v1.1.0/FraudGuard-v1.1.0.apk)
 
 FraudGuard is an enterprise, multi-tenant automated insurance claim management and AI-powered fraud investigation platform. Built with **Spring Boot 3 (Java 21)** on the core backend, **RabbitMQ** for event-driven decoupled pipelines, **FastAPI (Python 3.12)** for computer vision and OCR fraud forensics, and **Flutter** on mobile, it automates the full motor policy lifecycle, incident claim filing, multi-modal evidence analysis, real-time push/in-app alerts, and investigator casework.
 
@@ -17,8 +17,10 @@ FraudGuard is an enterprise, multi-tenant automated insurance claim management a
 
 ## 📱 Download Android APK (Live Demo)
 
-👉 **[Download FraudGuard Android APK (v1.0.0)](https://github.com/viveknarawade/Automated-Insurance-Claim-Fraud-Investigator/releases/latest/download/app-release.apk)**  
-*(File size: ~56.9 MB, built with release tree-shaking and minification)*
+👉 **[Download FraudGuard Android APK (v1.1.0)](https://github.com/v1-n/Automated-Insurance-Claim-Fraud-Investigator/releases/download/v1.1.0/FraudGuard-v1.1.0.apk)**  
+*(File size: ~58.6 MB, configured with live Render production backend, FCM push alerts, and in-app notifications)*
+
+> 📦 **All Releases**: View release notes and previous builds on the [GitHub Releases page](https://github.com/v1-n/Automated-Insurance-Claim-Fraud-Investigator/releases).
 
 ---
 
