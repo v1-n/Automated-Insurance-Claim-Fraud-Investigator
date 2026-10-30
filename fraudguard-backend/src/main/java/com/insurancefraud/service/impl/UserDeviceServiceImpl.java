@@ -26,7 +26,7 @@ public class UserDeviceServiceImpl implements UserDeviceService {
             throw new IllegalArgumentException("Device token is required to register device");
         }
 
-        UserDevice device = userDeviceRepo.findByTokenAndUser_UserIdAndTenant_TenantId(token, user.getUserId(), tenant.getTenantId())
+        UserDevice device = userDeviceRepo.findFirstByTokenAndUser_UserIdAndTenant_TenantId(token, user.getUserId(), tenant.getTenantId())
                 .orElseGet(UserDevice::new);
 
         device.setToken(token);

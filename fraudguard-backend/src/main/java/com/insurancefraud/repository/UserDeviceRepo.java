@@ -10,13 +10,13 @@ import java.util.Optional;
 public interface UserDeviceRepo
         extends JpaRepository<UserDevice, Long> {
 
-    Optional<UserDevice> findByTokenAndUser_UserIdAndTenant_TenantId(
+    Optional<UserDevice> findFirstByTokenAndUser_UserIdAndTenant_TenantId(
             String token,
             Long userId,
             Long tenantId
     );
 
-    Optional<UserDevice> findByUser_UserIdAndTenant_TenantId(long userId, long tenantId);
+    Optional<UserDevice> findFirstByUser_UserIdAndTenant_TenantId(long userId, long tenantId);
 
     List<UserDevice> findAllByUser_UserIdAndTenant_TenantIdAndActiveTrue(Long recipientId, Long tenantId);
 }
