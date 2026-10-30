@@ -57,10 +57,13 @@ public class AuthServiceImpl implements AuthService {
                     "A user with email " + requestDto.getEmail() + " already exists."
             );
         }
-        Tenant tenant = tenantRepo.findByTenantCode(requestDto.getTenantCode())
+        String rawCode = requestDto.getTenantCode() != null ? requestDto.getTenantCode().trim() : "";
+        Tenant tenant = tenantRepo.findByTenantCode(rawCode)
+                .or(() -> tenantRepo.findByTenantCode(rawCode.toUpperCase()))
+                .or(() -> tenantRepo.findByTenantCode(rawCode.toUpperCase().replace("-", "_")))
                 .orElseThrow(() ->
                         new TenantNotFoundException(
-                                "No tenant exists with code: " + requestDto.getTenantCode()
+                                "No tenant exists with code: " + requestDto.getTenantCode() + ". Valid codes include: TATA_AIG, MAHI, MSIL"
                         )
                 );
         Role userRole = roleRepo.findByRoleCode(RoleCode.USER)

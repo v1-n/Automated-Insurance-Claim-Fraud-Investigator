@@ -16,7 +16,7 @@ class ApiClient {
 
   static const String keyAccessToken = 'accessToken';
   static const String keyRefreshToken = 'refreshToken';
-  static const Duration timeoutDuration = Duration(seconds: 12);
+  static const Duration timeoutDuration = Duration(seconds: 35);
   static const Duration uploadTimeoutDuration = Duration(seconds: 90);
 
   Future<Map<String, String>> _getHeaders({bool isMultipart = false}) async {
