@@ -62,17 +62,20 @@ async def download_and_extract_text(
             logger.warning(f"[Doc #{doc_id} | Page {page_num}] No digital text found; invoking Tesseract OCR...")
 
             try:
+                # Calculate adaptive DPI to prevent OOM on 512MB RAM containers when processing high-res camera photos
+                max_dim = max(page.rect.width, page.rect.height) if max(page.rect.width, page.rect.height) > 0 else 800
+                ocr_dpi = max(72, min(int((1600.0 / max_dim) * 72), 150))
                 try:
                     ocr_page = await asyncio.to_thread(
-                        page.get_textpage_ocr, language=OCR_LANGUAGES, dpi=300, full=True
+                        page.get_textpage_ocr, language=OCR_LANGUAGES, dpi=ocr_dpi, full=True
                     )
                 except Exception:
                     # Fallback to English if regional language pack is unavailable
                     ocr_page = await asyncio.to_thread(
-                        page.get_textpage_ocr, language="eng", dpi=300, full=True
+                        page.get_textpage_ocr, language="eng", dpi=ocr_dpi, full=True
                     )
                 page_text = page.get_text(textpage=ocr_page)
-                logger.info(f"[Doc #{doc_id} | Page {page_num}] OCR extraction completed ({len(page_text)} chars)")
+                logger.info(f"[Doc #{doc_id} | Page {page_num}] OCR extraction completed at {ocr_dpi} DPI ({len(page_text)} chars)")
             except Exception as e:
                 logger.error(f"[Doc #{doc_id} | Page {page_num}] Tesseract OCR failed: {str(e)}")
                 page_text = ""
